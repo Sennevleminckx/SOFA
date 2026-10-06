@@ -88,3 +88,31 @@ def test_configs_load(name):
 
     cfg = load_experiment_config(CONFIG_DIR / f"{name}.yaml")
     assert isinstance(cfg["base"], Params)
+
+
+def test_e5_runner(tmp_path):
+    from sofa.experiments import run_e5
+
+    cfg = {
+        "base": BASE.replace(T=20, T_eval=4),
+        "mechanisms": [["sofa", 0.0], ["panel", 0.5], ["equal", 0.0]],
+        "lams": [0.0, 0.3],
+        "omegas": [0.3],
+        "turnover": [False],
+        "theta_sensitivity": {"thetas": [0.8]},
+        "comparison": {"omegas": [0.0], "sigma_ps": [0.5, 1.0]},
+        "trajectory_metrics": ["gini", "early_ratio"],
+    }
+    paths = run_e5(cfg, 1, tmp_path, n_jobs=1)
+    cells = pd.read_parquet(paths["cells"])
+    traj = pd.read_parquet(paths["trajectories"])
+    comp = pd.read_parquet(paths["comparison"])
+    assert len(cells) == 3 * (2 + 1)
+    s = cells.set_index(["mechanism", "lam", "theta"])
+    assert s.loc[("sofa", 0.0, 0.5), "solved"] == 1.0
+    assert s.loc[("sofa", 0.3, 0.5), "solved"] == 0.0
+    assert s.loc[("panel", 0.0, 0.5), "solved"] == 0.0
+    assert len(traj) == 3 * 2 * 20
+    assert len(comp) == 2 + 1 + 1  # SOFA over two σ_p, one cell each for the others
+    assert float(_meta(paths["cells"])["sofa.annual_crosscheck_max_rel_diff"]) < 1e-9
+    assert (cells.total_K - 120).abs().max() < 1e-3  # short T: SOFA transient α^(t+1) remains

@@ -198,3 +198,11 @@ def test_output_metrics_identity():
     out = metrics.output_metrics(K, q, ybar, ybar, np.full(2, 0.2), 0.5, 1.0)
     assert out["overhead"] == pytest.approx(0.6)
     assert out["overhead_share"] == pytest.approx(0.2)
+
+
+def test_output_vs_equal_scale(world):
+    eq = SOFAModel(P.replace(mechanism="equal"), seed=21, world=world).solve()
+    orc = SOFAModel(P.replace(mechanism="oracle"), seed=21, world=world).solve()
+    assert eq["output_vs_equal"] == pytest.approx(0.0, abs=1e-12)
+    assert orc["output_vs_equal"] == pytest.approx(orc["oracle_vs_equal"])
+    assert orc["oracle_vs_equal"] > 0

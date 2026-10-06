@@ -884,10 +884,257 @@ def plot_e4(results: Path) -> list[Path]:
     return [*e4_dotplot(df, figs), *e4_frontier(df, figs), figs / "E4_table.csv"]
 
 
+# --- E5 ---------------------------------------------------------------------------------
+MECH_STYLE = {  # (mechanism, b_share) → style; hue = mechanism, line style = b_share
+    ("sofa", 0.0): {"color": "#2a78d6", "ls": "-", "marker": "o", "label": "SOFA"},
+    ("panel", 0.0): {"color": "#eb6834", "ls": "-", "marker": "s", "label": "Panel (b = 0)"},
+    ("panel", 0.5): {"color": "#eb6834", "ls": "--", "marker": "s", "label": "Panel (b = 0.5)"},
+    ("lottery", 0.0): {"color": "#1baf7a", "ls": "-", "marker": "^", "label": "Lottery (b = 0)"},
+    ("lottery", 0.5): {"color": "#1baf7a", "ls": "--", "marker": "^", "label": "Lottery (b = 0.5)"},
+}
+REF_STYLE = {
+    ("equal", 0.0): ("A0 equal split", MUTED, ":"),
+    ("oracle", 0.0): ("A1 oracle", INK, "--"),
+}
+
+
+def _band(ax, x, sub: pd.DataFrame, col: str, by: str, style: dict) -> None:
+    stats = sub.groupby(by)[col].apply(_ci95)
+    xs = stats.index.to_numpy()
+    m, lo, hi = (np.array([s_[i] for s_ in stats]) for i in range(3))
+    ax.fill_between(xs, lo, hi, color=style["color"], alpha=0.15, lw=0)
+    ax.plot(
+        xs,
+        m,
+        color=style["color"],
+        ls=style.get("ls", "-"),
+        lw=1.8,
+        label=style.get("label"),
+        marker=style.get("marker") if x == "points" else None,
+        ms=4,
+    )
+
+
+def e5_trajectories(
+    tr: pd.DataFrame, out: Path, omega: float = 0.3, turnover: bool = False
+) -> list[Path]:
+    """Concentration, equity and stability over time per mechanism, by λ (§7 E5)."""
+    d = tr[np.isclose(tr.omega, omega) & (tr.turnover == turnover)]
+    lams = sorted(d.lam.unique())
+    rows = (
+        ("gini", "Gini(K)"),
+        ("early_ratio", "Early-career share ÷ population share"),
+        ("field_4_ratio", "Smallest field (8 %): share ÷ size"),
+        ("stability", "Year-on-year rank stability of K"),
+    )
+    with mpl.rc_context(STYLE):
+        fig, axes = plt.subplots(len(rows), len(lams), figsize=(11, 11), sharex=True, sharey="row")
+        for c, lam in enumerate(lams):
+            dl = d[np.isclose(d.lam, lam)]
+            for r, (col, label) in enumerate(rows):
+                ax = axes[r, c]
+                for key, (lab, colour, ls) in REF_STYLE.items():
+                    ref = dl[(dl.mechanism == key[0])]
+                    if len(ref) and col != "stability":
+                        ax.axhline(ref[col].mean(), color=colour, ls=ls, lw=1.0, label=lab)
+                for key, st_ in MECH_STYLE.items():
+                    sub = dl[(dl.mechanism == key[0]) & np.isclose(dl.b_share, key[1])]
+                    if len(sub):
+                        _band(ax, "lines", sub, col, "year", st_)
+                if r == 0:
+                    ax.set_title(
+                        f"λ = {lam:g}" + (" (no feedback)" if lam == 0 else ""), loc="left"
+                    )
+                if c == 0:
+                    ax.set_ylabel(label)
+                if r == len(rows) - 1:
+                    ax.set_xlabel("Year")
+        h, lab = axes[1, 0].get_legend_handles_labels()
+        fig.legend(
+            h,
+            lab,
+            loc="center left",
+            bbox_to_anchor=(1.0, 0.5),
+            fontsize=7.5,
+            title="Mechanism",
+            title_fontsize=7.5,
+        )
+        fig.suptitle(
+            f"Feedback over time (ω = {omega:g}, turnover {'on' if turnover else 'off'}; "
+            f"mean and 95 % interval over {d.seed.nunique()} seeds; solved SOFA "
+            "cells at λ = 0 are flat by construction)",
+            x=0.01,
+            ha="left",
+            fontsize=9.5,
+        )
+        fig.tight_layout()
+        return _save(fig, out, f"E5_trajectories{'_turnover' if turnover else ''}")
+
+
+def e5_equity(cells: pd.DataFrame, out: Path) -> list[Path]:
+    """Early-career and small-field ratios at the end, against λ by ω (H5)."""
+    d = cells[np.isclose(cells.theta, 0.5)]
+    mechs = [("sofa", 0.0), ("panel", 0.5), ("lottery", 0.5)]
+    omegas = sorted(d.omega.unique())
+    blues = ("#6da7ec", "#256abf", "#0d366b")
+    with mpl.rc_context(STYLE):
+        fig, axes = plt.subplots(2, 3, figsize=(11, 6.6), sharex=True, sharey=True)
+        for r, turnover in enumerate((False, True)):
+            for c, key in enumerate(mechs):
+                ax = axes[r, c]
+                ax.axhline(1.0, color=INK, lw=0.9, ls="--")
+                sub = d[
+                    (d.mechanism == key[0])
+                    & np.isclose(d.b_share, key[1])
+                    & (d.turnover == turnover)
+                ]
+                for colour, om in zip(blues, omegas, strict=False):
+                    _band(
+                        ax,
+                        "points",
+                        sub[np.isclose(sub.omega, om)],
+                        "early_ratio",
+                        "lam",
+                        {"color": colour, "marker": "o", "label": f"ω = {om:g}"},
+                    )
+                if r == 0:
+                    ax.set_title(MECH_STYLE[key]["label"], loc="left")
+                if c == 0:
+                    ax.set_ylabel(f"Early-career ratio\n(turnover {'on' if turnover else 'off'})")
+                if r == 1:
+                    ax.set_xlabel("Visibility feedback λ")
+        h, lab = axes[0, 0].get_legend_handles_labels()
+        fig.legend(
+            h,
+            lab,
+            loc="center left",
+            bbox_to_anchor=(1.0, 0.5),
+            fontsize=7.5,
+            title="Reputation weight",
+            title_fontsize=7.5,
+        )
+        fig.suptitle(
+            "H5: early-career share of K ÷ population share at the end of the run "
+            f"(1 = proportional; {d.seed.nunique()} seeds)",
+            x=0.01,
+            ha="left",
+            fontsize=10,
+        )
+        fig.tight_layout()
+        return _save(fig, out, "E5_equity")
+
+
+def e5_comparison(comp: pd.DataFrame, out: Path) -> list[Path]:
+    """Mechanism comparison at λ = 0 on a plain scale, and SOFA's dependence on ω, σ_p (H6)."""
+    oracle_gain = comp[comp.mechanism == "oracle"].output_vs_equal.mean() * 100
+    with mpl.rc_context(STYLE):
+        fig, (a, b) = plt.subplots(1, 2, figsize=(11, 4.4), gridspec_kw={"width_ratios": [1.5, 1]})
+        keys = list(MECH_STYLE)
+        omegas = sorted(comp.omega.unique())
+        blues = ("#6da7ec", "#256abf", "#0d366b")
+        a.axvline(0, color=MUTED, lw=0.9, ls=":")
+        a.axvline(oracle_gain, color=INK, lw=0.9, ls="--")
+        a.annotate(
+            "A1 oracle",
+            (oracle_gain, len(keys) - 0.4),
+            xytext=(3, 0),
+            textcoords="offset points",
+            fontsize=7.5,
+            color=INK,
+        )
+        a.annotate(
+            "A0 equal split",
+            (0, len(keys) - 0.4),
+            xytext=(3, 0),
+            textcoords="offset points",
+            fontsize=7.5,
+            color=MUTED,
+        )
+        for i, key in enumerate(keys[::-1]):
+            sub = comp[(comp.mechanism == key[0]) & np.isclose(comp.b_share, key[1])]
+            if key[0] == "sofa":
+                sub = sub[np.isclose(sub.sigma_p, 0.5)]
+            for j, (colour, om) in enumerate(zip(blues, omegas, strict=False)):
+                x = sub[np.isclose(sub.omega, om)].output_vs_equal * 100
+                m, lo, hi = _ci95(x)
+                a.errorbar(
+                    m,
+                    i + (j - 1) * 0.2,
+                    xerr=[[m - lo], [hi - m]],
+                    color=colour,
+                    marker="o",
+                    ms=5,
+                    capsize=2,
+                    lw=1.4,
+                    label=f"ω = {om:g}" if i == 0 else None,
+                )
+        a.set_yticks(range(len(keys)), [MECH_STYLE[k]["label"] for k in keys[::-1]])
+        a.set_xlabel("Expected output after overhead vs equal split (%)")
+        a.set_ylim(-0.6, len(keys) - 0.1)
+        a.grid(axis="y", visible=False)
+        a.legend(loc="lower right", fontsize=7.5, title="Reputation weight", title_fontsize=7.5)
+        s_ = comp[comp.mechanism == "sofa"]
+        M = s_.groupby(["sigma_p", "omega"]).efficiency_net.mean().unstack("omega")
+        im = b.imshow(
+            M.to_numpy(),
+            origin="lower",
+            cmap=SEQ_BLUE,
+            aspect="auto",
+            vmin=0,
+            vmax=max(1e-9, M.to_numpy().max()),
+        )
+        for i_ in range(M.shape[0]):
+            for j_ in range(M.shape[1]):
+                val = M.to_numpy()[i_, j_]
+                b.text(
+                    j_,
+                    i_,
+                    f"{val:.2f}",
+                    ha="center",
+                    va="center",
+                    fontsize=8,
+                    color="white" if val > 0.6 * M.to_numpy().max() else INK,
+                )
+        b.set_xticks(range(M.shape[1]), [f"{o:g}" for o in M.columns])
+        b.set_yticks(range(M.shape[0]), [f"{s:g}" for s in M.index])
+        b.set(
+            xlabel="Reputation weight ω",
+            ylabel="Perception noise σ_p",
+            title="SOFA net efficiency E_net",
+        )
+        b.grid(False)
+        fig.colorbar(im, ax=b, shrink=0.85).set_label("E_net (0 = equal, 1 = oracle)")
+        fig.suptitle(
+            f"Mechanism comparison without feedback (λ = 0; oracle gain over equal "
+            f"split = {oracle_gain:.1f} %; {comp.seed.nunique()} seeds)",
+            x=0.01,
+            ha="left",
+            fontsize=10,
+        )
+        fig.tight_layout()
+        return _save(fig, out, "E5_comparison")
+
+
+def plot_e5(results: Path) -> list[Path]:
+    """All E5 figures."""
+    src = results / "E5"
+    tr = pd.read_parquet(src / "E5_trajectories.parquet")
+    cells = pd.read_parquet(src / "E5_cells.parquet")
+    comp = pd.read_parquet(src / "E5_comparison.parquet")
+    figs = src / "figures"
+    return (
+        e5_trajectories(tr, figs)
+        + e5_trajectories(tr, figs, turnover=True)
+        + e5_equity(cells, figs)
+        + e5_comparison(comp, figs)
+    )
+
+
 PLOTTERS: dict[str, Callable[[Path], list[Path]]] = {
     "E0": plot_e0,
     "E1": plot_e1,
     "E2": plot_e2,
     "E3": plot_e3,
     "E4": plot_e4,
+    "E5": plot_e5,
 }

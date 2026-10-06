@@ -192,7 +192,9 @@ def output_metrics(
     ``overhead`` is the output forgone through time spent on the mechanism,
     Σ q_i (K_i/B)^θ cost_i. ``efficiency_net`` = (Y_net − Y_A0)/(Y_A1 − Y_A0), with Y_net
     the expected output after overhead and A0/A1 cost-free; it equals ``efficiency`` when
-    the mechanism costs nothing.
+    the mechanism costs nothing. Because Y_A1 − Y_A0 can be small, E magnifies
+    differences; ``output_vs_equal`` (Y_net/Y_A0 − 1) gives the same comparison on a plain
+    scale, and ``oracle_vs_equal`` the attainable gain.
     """
     gross = expected_output(K, q, theta, B)
     y0 = expected_output(np.full_like(np.asarray(q, float), B), q, theta, B)
@@ -204,4 +206,6 @@ def output_metrics(
         "overhead": gross - net,
         "overhead_share": (gross - net) / gross if gross > 0 else float("nan"),
         "efficiency_net": (net - y0) / (y1 - y0) if not np.isclose(y1, y0) else float("nan"),
+        "output_vs_equal": net / y0 - 1.0,  # expected output after overhead vs A0, as a ratio
+        "oracle_vs_equal": y1 / y0 - 1.0,  # the attainable gain, for scale
     }

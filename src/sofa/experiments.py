@@ -6,7 +6,8 @@ Usage::
     python -m sofa.experiments plot E0 --out results/
 
 Implemented: E0 (verification against §2.3, M1), E1 (sincere mechanics, M2), E2 (cartels),
-E3 (transparency) and E4 (safeguards) (M3). Cells in which W cannot change are solved,
+E3 (transparency) and E4 (safeguards) (M3), E5 (feedback, equity, mechanism comparison;
+M4). Cells in which W cannot change are solved,
 with a guard and one annual cross-check per experiment (M2 review decision).
 """
 
@@ -640,6 +641,108 @@ def run_e4(cfg: dict[str, Any], seeds: int, out: Path, n_jobs: int = -1) -> dict
     return {"cells": path}
 
 
+# --- E5: feedback, equity and mechanism comparison (§7) --------------------------------
+def e5_params(p: Params, mechanism: str, b_share: float, **cell: Any) -> Params:
+    """One E5 cell. ω is the evaluators' reputation weight for donors and panels alike."""
+    omega = cell.pop("omega", p.omega)
+    return p.replace(mechanism=mechanism, b_share=b_share, omega=omega, omega_p=omega, **cell)
+
+
+def _e5_cell(p: Params, seed: int, world: World, keep: list[str]) -> tuple[dict, list[dict]]:
+    """Evaluate one cell; return its summary and (for simulated cells) its yearly path.
+
+    Solved cells have no transient: their path is the solved value in every year.
+    """
+    model = SOFAModel(p, seed=seed, world=world)
+    if model.is_static():
+        summary = model.solve()
+        summary["solved"] = 1.0
+        path = [{"year": t, **{k: summary.get(k, np.nan) for k in keep}} for t in range(1, p.T + 1)]
+    else:
+        res = model.run()
+        summary = res.summary()
+        summary["solved"] = 0.0
+        path = res.yearly[["year", *[k for k in keep if k in res.yearly]]].to_dict("records")
+    return summary, path
+
+
+def _e5_seed(cfg: dict[str, Any], seed: int) -> tuple[list[dict], list[dict], list[dict]]:
+    """All E5 cells for one seed: (feedback summaries, trajectories, comparison)."""
+    p: Params = cfg["base"]
+    world = build_world(p, RNGStreams(seed))
+    keep = list(cfg["trajectory_metrics"])
+    cells, paths, comp = [], [], []
+
+    def add(target: list, label: dict, pc: Params, with_path: bool) -> None:
+        summary, path = _e5_cell(pc, seed, world, keep)
+        target.append({"seed": seed, **label, **summary})
+        if with_path:
+            paths.extend({"seed": seed, **label, **r} for r in path)
+
+    for mech, b in cfg["mechanisms"]:
+        for lam in cfg["lams"]:
+            for omega in cfg["omegas"]:
+                for turnover in cfg["turnover"]:
+                    label = dict(
+                        mechanism=mech,
+                        b_share=b,
+                        lam=lam,
+                        omega=omega,
+                        turnover=turnover,
+                        theta=p.theta,
+                        sigma_p=p.sigma_p,
+                    )
+                    pc = e5_params(p, mech, b, lam=lam, omega=omega, turnover=turnover)
+                    add(cells, label, pc, with_path=True)
+        for theta in cfg["theta_sensitivity"]["thetas"]:
+            label = dict(
+                mechanism=mech,
+                b_share=b,
+                lam=0.2,
+                omega=0.3,
+                turnover=False,
+                theta=theta,
+                sigma_p=p.sigma_p,
+            )
+            add(
+                cells,
+                label,
+                e5_params(p, mech, b, lam=0.2, omega=0.3, theta=theta),
+                with_path=False,
+            )
+        sigmas = cfg["comparison"]["sigma_ps"] if mech == "sofa" else [p.sigma_p]
+        for omega in cfg["comparison"]["omegas"]:
+            for sp in sigmas:
+                label = dict(mechanism=mech, b_share=b, omega=omega, sigma_p=sp)
+                add(comp, label, e5_params(p, mech, b, omega=omega, sigma_p=sp), with_path=False)
+    return cells, paths, comp
+
+
+def run_e5(cfg: dict[str, Any], seeds: int, out: Path, n_jobs: int = -1) -> dict[str, Path]:
+    """Run E5; write cells, trajectories and comparison tables to ``out/E5``."""
+    t0 = time.perf_counter()
+    res = Parallel(n_jobs=n_jobs)(delayed(_e5_seed)(cfg, s) for s in range(seeds))
+    p: Params = cfg["base"]
+    world = build_world(p, RNGStreams(0))
+    xcheck = annual_crosscheck(p, 0, world)  # the λ = 0 SOFA cells are solved
+    meta = dict(
+        experiment="E5",
+        config_hash=p.config_hash(),
+        git_commit=git_commit(),
+        seeds=seeds,
+        N=p.N,
+        runtime_s=f"{time.perf_counter() - t0:.1f}",
+        annual_crosscheck="SOFA λ = 0, default cell, seed 0",
+        annual_crosscheck_max_rel_diff=f"{xcheck:.3e}",
+    )
+    paths = {}
+    for i, name in enumerate(("cells", "trajectories", "comparison")):
+        df = pd.DataFrame([r for parts in res for r in parts[i]])
+        paths[name] = out / "E5" / f"E5_{name}.parquet"
+        write_parquet(df, paths[name], meta)
+    return paths
+
+
 # --- Registry and CLI -------------------------------------------------------------------
 RUNNERS: dict[str, Callable[..., dict[str, Path]]] = {
     "E0": run_e0,
@@ -647,6 +750,7 @@ RUNNERS: dict[str, Callable[..., dict[str, Path]]] = {
     "E2": run_e2,
     "E3": run_e3,
     "E4": run_e4,
+    "E5": run_e5,
 }
 
 
