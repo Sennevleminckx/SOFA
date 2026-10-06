@@ -1,0 +1,29 @@
+# E4 Safeguards (Milestone 3, §7). Each safeguard alone and in combination, and α as a
+# lever, against one cartel (φ = 1, random members). Premium against the same safeguard
+# with the cartel off (CRN); collateral cost = efficiency loss in the all-sincere
+# population relative to no safeguard at α = 0.5. All cells are static and solved.
+experiment: E4
+description: Safeguard trade-off frontier against clique and ring cartels.
+base:
+  N: 500
+  alpha: 0.5
+cartels:          # (topology, k)
+  - [clique, 5]
+  - [ring, 5]
+  - [ring, 3]
+safeguards:       # name → parameter overrides
+  none: {}
+  "S1 COI": {coi: true}
+  "S2 c=0.2": {cap: 0.2}
+  "S2 c=0.1": {cap: 0.1}
+  "S2 c=0.05": {cap: 0.05}
+  "S3 δ=0.5": {delta: 0.5}
+  "S3 δ=1": {delta: 1.0}
+  "S4 L=3 δ=1": {delta_L: 1.0, L: 3}
+  "S4 L=5 δ=1": {delta_L: 1.0, L: 5}
+  "α=0.35": {alpha: 0.35}
+  "α=0.2": {alpha: 0.2}
+  "S1+S2(0.1)+S3(1)": {coi: true, cap: 0.1, delta: 1.0}
+  "S3(1)+S4(L=5)": {delta: 1.0, delta_L: 1.0, L: 5}
+  "S1+S2(0.1)+S3(1)+S4(L=5)": {coi: true, cap: 0.1, delta: 1.0, delta_L: 1.0, L: 5}
+seeds: 50

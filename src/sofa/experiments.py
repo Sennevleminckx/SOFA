@@ -5,8 +5,9 @@ Usage::
     python -m sofa.experiments run E0 --seeds 10 --n 400 --out results/
     python -m sofa.experiments plot E0 --out results/
 
-Implemented: E0 (verification against §2.3, Milestone 1) and E1 (sincere mechanics,
-Milestone 2).
+Implemented: E0 (verification against §2.3, M1), E1 (sincere mechanics, M2), E2 (cartels),
+E3 (transparency) and E4 (safeguards) (M3). Cells in which W cannot change are solved,
+with a guard and one annual cross-check per experiment (M2 review decision).
 """
 
 from __future__ import annotations
@@ -32,7 +33,8 @@ from sofa.flows import (
     iterate_fixed_W,
     steady_state,
 )
-from sofa.model import SOFAModel, build_world
+from sofa.model import SOFAModel, World, build_world, evaluate
+from sofa.population import Roles, assign_roles
 from sofa.rng import RNGStreams
 from sofa.safeguards import cap_project
 from sofa.strategies import cartel_rows, choose_members, random_sparse_W
@@ -408,13 +410,244 @@ def run_e1(cfg: dict[str, Any], seeds: int, out: Path, n_jobs: int = -1) -> dict
         N=p.N,
         runtime_s=f"{time.perf_counter() - t0:.1f}",
     )
+    xcheck = annual_crosscheck(baselines.a2_params(p), 0, build_world(p, RNGStreams(0)))
+    meta.update(
+        annual_crosscheck="default cell, seed 0", annual_crosscheck_max_rel_diff=f"{xcheck:.3e}"
+    )
     path = out / "E1" / "E1_cells.parquet"
     write_parquet(df, path, meta)
     return {"cells": path}
 
 
+# --- Shared helpers for solved experiments (M2 review decision) -------------------------
+def annual_crosscheck(p: Params, seed: int, world: World, roles: Roles | None = None) -> float:
+    """Simulate one solved cell in annual mode; return max |K_annual/K_solved − 1|.
+
+    The horizon is long enough for the transient (including the pool lag, rate √α) to
+    fall below 1e-12.
+    """
+    m = SOFAModel(p, seed=seed, world=world, roles=roles)
+    K_solved = m.equilibrium()[1]
+    rate = np.sqrt(p.alpha) if p.diverts_to_pool() or p.coi else p.alpha
+    T = int(np.ceil(np.log(1e-12) / np.log(rate))) + 5
+    pa = p.replace(T=T, T_eval=1, flow_mode="annual")
+    res = SOFAModel(pa, seed=seed, world=world, roles=roles).run()
+    return float(np.abs(res.snapshots[T]["K"] / K_solved - 1.0).max())
+
+
+def _who_pays_cols(K: np.ndarray, K0: np.ndarray, q: np.ndarray, members) -> dict:
+    """ΔK of non-members by quality decile, as columns ``who_pays_d0`` … ``d9`` (§6)."""
+    return {f"who_pays_d{i}": float(v) for i, v in enumerate(metrics.who_pays(K, K0, q, members))}
+
+
+# --- E2: cartels (§7) -------------------------------------------------------------------
+def _e2_seed(cfg: dict[str, Any], seed: int) -> list[dict]:
+    """All E2 cells for one seed. W is static in every cell, so each is solved.
+
+    Members are drawn per (k, selection) from a fresh ``strategy`` stream, so α, φ and
+    topology share the same members (CRN); W does not depend on α, so it is built once
+    per (k, selection, topology, φ) and solved for each α.
+    """
+    p: Params = cfg["base"]
+    world = build_world(p, RNGStreams(seed))
+    pop = world.pop
+    W0 = SOFAModel(p, seed=seed, world=world).donation_matrix(1)
+    K0 = {a: steady_state(W0, a, p.B)[1] for a in cfg["alphas"]}
+    rows = []
+    for k in cfg["ks"]:
+        for sel in cfg["selections"]:
+            pk = p.replace(cartels=True, k=k, cartel_selection=sel)
+            roles = assign_roles(pop, pk, RNGStreams(seed))
+            C = roles.cartels[0]
+            for topo in cfg["topologies"]:
+                if topo != "clique" and k == 2:
+                    continue  # a ring or star of two is the clique of two
+                for phi in cfg["phis"]:
+                    model = SOFAModel(
+                        pk.replace(topology=topo, phi=phi), seed=seed, world=world, roles=roles
+                    )
+                    if not model.is_static():
+                        raise ValueError("E2 solves cells, but this W changes over time")
+                    W = model.donation_matrix(1)
+                    for alpha in cfg["alphas"]:
+                        _, K = steady_state(W, alpha, p.B)
+                        Pi = metrics.cartel_premium(K, K0[alpha], C)
+                        bound = metrics.premium_bound(alpha, phi)
+                        row = dict(
+                            seed=seed,
+                            alpha=alpha,
+                            k=k,
+                            phi=phi,
+                            topology=topo,
+                            selection=sel,
+                            premium=Pi,
+                            bound=bound,
+                            shortfall=1 - Pi / bound,
+                            members_q=float(pop.q[C].mean()),
+                            members_K0=float(K0[alpha][C].mean()),
+                            outsiders_dK=float((K - K0[alpha]).sum() - (K - K0[alpha])[C].sum()),
+                        )
+                        row.update(_who_pays_cols(K, K0[alpha], pop.q, C))
+                        rows.append(row)
+    return rows
+
+
+def run_e2(cfg: dict[str, Any], seeds: int, out: Path, n_jobs: int = -1) -> dict[str, Path]:
+    """Run E2; write ``out/E2/E2_cells.parquet`` with the annual cross-check in metadata."""
+    t0 = time.perf_counter()
+    res = Parallel(n_jobs=n_jobs)(delayed(_e2_seed)(cfg, s) for s in range(seeds))
+    df = pd.DataFrame([r for rows in res for r in rows])
+    p: Params = cfg["base"]
+    world = build_world(p, RNGStreams(0))
+    pc = p.replace(cartels=True, k=5, phi=1.0, alpha=0.8)
+    xcheck = annual_crosscheck(pc, 0, world)
+    meta = dict(
+        experiment="E2",
+        config_hash=p.config_hash(),
+        git_commit=git_commit(),
+        seeds=seeds,
+        N=p.N,
+        runtime_s=f"{time.perf_counter() - t0:.1f}",
+        annual_crosscheck="k=5 clique phi=1 alpha=0.8 seed 0",
+        annual_crosscheck_max_rel_diff=f"{xcheck:.3e}",
+    )
+    path = out / "E2" / "E2_cells.parquet"
+    write_parquet(df, path, meta)
+    return {"cells": path}
+
+
+# --- E3: transparency (§7) --------------------------------------------------------------
+def e3_params(p: Params, behaviour: str, share: float, regime: str) -> Params:
+    """Parameters of one E3 cell: one strategic behaviour at population share ``share``."""
+    pc = p.replace(regime=regime)
+    if share == 0.0:
+        return pc
+    if behaviour == "herder":
+        return pc.replace(x_herd=share)
+    if behaviour == "reciprocator":
+        return pc.replace(x_recip=share)
+    return pc.replace(cartels=True, x_C=share, k=5, topology="clique", phi=1.0)
+
+
+def _e3_seed(cfg: dict[str, Any], seed: int) -> list[dict]:
+    """All E3 cells for one seed: solved when W is static, simulated otherwise."""
+    p: Params = cfg["base"]
+    world = build_world(p, RNGStreams(seed))
+    rows = []
+    for behaviour in cfg["behaviours"]:
+        for share in cfg["shares"]:
+            for regime in cfg["regimes"]:
+                model = SOFAModel(e3_params(p, behaviour, share, regime), seed=seed, world=world)
+                row = dict(seed=seed, behaviour=behaviour, share=share, regime=regime)
+                row.update(evaluate(model))
+                rows.append(row)
+    return rows
+
+
+def run_e3(cfg: dict[str, Any], seeds: int, out: Path, n_jobs: int = -1) -> dict[str, Path]:
+    """Run E3; write ``out/E3/E3_cells.parquet``."""
+    t0 = time.perf_counter()
+    res = Parallel(n_jobs=n_jobs)(delayed(_e3_seed)(cfg, s) for s in range(seeds))
+    df = pd.DataFrame([r for rows in res for r in rows])
+    p: Params = cfg["base"]
+    world = build_world(p, RNGStreams(0))
+    xcheck = annual_crosscheck(e3_params(p, "cartel", 0.25, "T0"), 0, world)
+    meta = dict(
+        experiment="E3",
+        config_hash=p.config_hash(),
+        git_commit=git_commit(),
+        seeds=seeds,
+        N=p.N,
+        runtime_s=f"{time.perf_counter() - t0:.1f}",
+        annual_crosscheck="cartel share 0.25, T0, seed 0",
+        annual_crosscheck_max_rel_diff=f"{xcheck:.3e}",
+    )
+    path = out / "E3" / "E3_cells.parquet"
+    write_parquet(df, path, meta)
+    return {"cells": path}
+
+
+# --- E4: safeguards (§7) ----------------------------------------------------------------
+def _e4_seed(cfg: dict[str, Any], seed: int) -> list[dict]:
+    """All E4 cells for one seed (all static, all solved).
+
+    For every safeguard configuration: the all-sincere population (collateral cost,
+    pool use) and, per cartel variant, the cartel's premium against the same safeguard
+    without the cartel.
+    """
+    p: Params = cfg["base"]
+    world = build_world(p, RNGStreams(seed))
+    pop = world.pop
+    rows = []
+    for name, overrides in cfg["safeguards"].items():
+        ps = p.replace(**overrides)
+        sincere = SOFAModel(ps, seed=seed, world=world)
+        st0, _ = sincere.equilibrium_state()  # raises if W were dynamic
+        base = dict(seed=seed, safeguard=name, alpha=ps.alpha)
+        row = dict(
+            base,
+            cartel="none",
+            premium=np.nan,
+            efficiency=metrics.efficiency(st0.K, pop.q, p.theta, p.B),
+            gini=metrics.gini(st0.K),
+            pool_share=st0.pool / (ps.alpha * st0.R.sum()),
+            reciprocity=metrics.reciprocity_index(st0.F),
+        )
+        rows.append(row)
+        for topo, k in cfg["cartels"]:
+            pc = ps.replace(cartels=True, k=k, topology=topo, phi=1.0)
+            m = SOFAModel(pc, seed=seed, world=world)
+            st1, _ = m.equilibrium_state()
+            C = m.roles.cartels[0]
+            rows.append(
+                dict(
+                    base,
+                    cartel=f"{topo} k={k}",
+                    premium=metrics.cartel_premium(st1.K, st0.K, C),
+                    efficiency=metrics.efficiency(st1.K, pop.q, p.theta, p.B),
+                    gini=metrics.gini(st1.K),
+                    pool_share=st1.pool / (pc.alpha * st1.R.sum()),
+                    reciprocity=metrics.reciprocity_index(st1.F),
+                    mutual_flow_in_cartel=metrics.mutual_flow(st1.F, C),
+                )
+            )
+    return rows
+
+
+def run_e4(cfg: dict[str, Any], seeds: int, out: Path, n_jobs: int = -1) -> dict[str, Path]:
+    """Run E4; write ``out/E4/E4_cells.parquet``."""
+    t0 = time.perf_counter()
+    res = Parallel(n_jobs=n_jobs)(delayed(_e4_seed)(cfg, s) for s in range(seeds))
+    df = pd.DataFrame([r for rows in res for r in rows])
+    p: Params = cfg["base"]
+    world = build_world(p, RNGStreams(0))
+    pc = p.replace(
+        cartels=True, k=5, topology="ring", phi=1.0, coi=True, cap=0.1, delta=1.0, delta_L=1.0, L=5
+    )
+    xcheck = annual_crosscheck(pc, 0, world)
+    meta = dict(
+        experiment="E4",
+        config_hash=p.config_hash(),
+        git_commit=git_commit(),
+        seeds=seeds,
+        N=p.N,
+        runtime_s=f"{time.perf_counter() - t0:.1f}",
+        annual_crosscheck="ring k=5 under S1+S2(0.1)+S3(1)+S4(L=5), seed 0",
+        annual_crosscheck_max_rel_diff=f"{xcheck:.3e}",
+    )
+    path = out / "E4" / "E4_cells.parquet"
+    write_parquet(df, path, meta)
+    return {"cells": path}
+
+
 # --- Registry and CLI -------------------------------------------------------------------
-RUNNERS: dict[str, Callable[..., dict[str, Path]]] = {"E0": run_e0, "E1": run_e1}
+RUNNERS: dict[str, Callable[..., dict[str, Path]]] = {
+    "E0": run_e0,
+    "E1": run_e1,
+    "E2": run_e2,
+    "E3": run_e3,
+    "E4": run_e4,
+}
 
 
 def main(argv: list[str] | None = None) -> None:

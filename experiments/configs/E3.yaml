@@ -1,0 +1,12 @@
+# E3 Transparency (Milestone 3, §7). Regime T0–T3 × population share of one strategic
+# behaviour at a time (herders, reciprocators or cartel members, k = 5 cliques).
+# Cells where W can change (herders under T1+, reciprocators under T2+) are simulated
+# for T years; all others are solved (M2 review decision).
+experiment: E3
+description: Transparency regime × share of herders, reciprocators or cartel members.
+base:
+  N: 500
+regimes: [T0, T1, T2, T3]
+behaviours: [herder, reciprocator, cartel]
+shares: [0.0, 0.1, 0.25, 0.5]
+seeds: 50
