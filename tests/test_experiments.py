@@ -170,3 +170,7 @@ def test_e7_runner(tmp_path):
     assert np.isfinite(sg[cfg["blocks"]["safeguards"]["outcomes"]].to_numpy(float)).all()
     meta = pq.read_schema(paths["safeguards"]).metadata
     assert float(meta[b"sofa.annual_crosscheck_max_rel_diff"]) < 1e-9
+    from sofa import plotting
+
+    figs = plotting.plot_e7(tmp_path)
+    assert len(figs) == 2 * 3 * len(cfg["blocks"]) and all(f.exists() for f in figs)

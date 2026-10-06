@@ -1362,6 +1362,248 @@ def plot_e6(results: Path) -> list[Path]:
     )
 
 
+# --- E7 ---------------------------------------------------------------------------------
+FACTOR_LABELS = {
+    "alpha": "α (pass-on fraction)",
+    "N": "N (researchers)",
+    "sigma_q": "σ_q (quality spread)",
+    "lab_size": "Lab size",
+    "kappa": "κ (visibility ~ quality)",
+    "early_visibility": "Early-career visibility",
+    "d": "d (contacts)",
+    "p_in_out_ratio": "p_in : p_out",
+    "tau": "τ (visibility → awareness)",
+    "sigma_p": "σ_p (perception noise)",
+    "omega": "ω (weight on reputation)",
+    "mu": "μ (homophily)",
+    "beta": "β (weight exponent)",
+    "m": "m (top-m recipients)",
+    "gamma_up": "γ_up (deference)",
+    "k": "k (cartel size)",
+    "phi": "φ (internal share)",
+    "theta": "θ (returns to funding)",
+    "sigma_y": "σ_y (output noise)",
+    "lam": "λ (visibility feedback)",
+    "c_sofa": "c_sofa (SOFA time cost)",
+    "p_s": "p_s (panel success rate)",
+    "sigma_panel": "σ_panel (panel noise)",
+    "omega_p": "ω_p (panel weight on reputation)",
+    "c_write": "c_write (proposal cost)",
+    "topology": "Ring (vs clique)",
+    "coi": "S1 COI on",
+    "cap": "c (S2 cap)",
+    "delta": "δ (S3 mutual-flow discount)",
+    "delta_L": "δ_L (S4 cycle discount)",
+    "L": "L (S4 cycle length)",
+    "s4_weighted": "S4 unweighted (vs α-weighted)",
+    "regime": "Transparency (T0 → T3)",
+    "mu_s": "μ_s (mutation rate)",
+    "c_m": "c_m (moral cost)",
+    "p_low": "p_low (detection under T0/T1)",
+    "x_C": "x_C (initial cartel share)",
+    "dummy": "Dummy (noise floor)",
+}
+OUTCOME_LABELS = {
+    "gini": "Gini(K)",
+    "efficiency": "Efficiency E",
+    "output_vs_equal": "Output vs equal split",
+    "early_ratio": "Early-career share ratio",
+    "premium": "Cartel premium Π",
+    "premium_rel_bound": "Π relative to 1/(1 − αφ)",
+    "small_field_ratio": "Smallest-field share ratio",
+    "spearman_Kq": "Spearman ρ(K, q)",
+    "sofa_vs_panel": "SOFA − panel output",
+    "premium_reduction": "Reduction in Π",
+    "collateral_loss": "Collateral output loss",
+    "pool_share": "Share of donations to pool",
+    "share_sincere": "Sincere share",
+    "strategic_play": "Strategic play",
+    "share_in_cartels": "Share in cartels",
+    "share_shirker": "Shirker share",
+}
+BLOCK_TITLES = {
+    "mechanics": "Sincere SOFA with feedback, one cartel, panel comparator",
+    "safeguards": "Safeguards S1–S4 against one cartel (static, solved)",
+    "evolution": "Evolution of strategies (imitation, mutation, shirking)",
+}
+POS, NEG = "#2a78d6", "#e34948"
+
+
+def _flabel(name: str) -> str:
+    return FACTOR_LABELS.get(name, name)
+
+
+def e7_tornado(prcc: pd.DataFrame, block: str, out: Path, top: int = 10) -> list[Path]:
+    """PRCC tornado plots for one block: one panel per outcome, strongest factors first.
+
+    Bars are PRCC with 95 % intervals; colour gives the sign when significant after a
+    Bonferroni correction, grey otherwise. The dashed lines mark ± the dummy's |PRCC|.
+    """
+    d = prcc[prcc.block == block]
+    outcomes = list(dict.fromkeys(d.outcome))
+    ncol = 3
+    nrow = int(np.ceil(len(outcomes) / ncol))
+    with mpl.rc_context(STYLE):
+        fig, axes = plt.subplots(
+            nrow, ncol, figsize=(11.5, 2.9 * nrow + 0.5), sharex=True, squeeze=False
+        )
+        for ax, outc in zip(axes.flat, outcomes, strict=False):
+            t = d[d.outcome == outc].dropna(subset=["prcc"])
+            dummy = t[t.factor == "dummy"].prcc.abs().max() if (t.factor == "dummy").any() else 0
+            t = t[t.factor != "dummy"].reindex(
+                t[t.factor != "dummy"].prcc.abs().sort_values(ascending=False).index
+            )
+            t = t.head(top).iloc[::-1]
+            colours = [
+                (POS if r > 0 else NEG) if sig else "#c9c8c2"
+                for r, sig in zip(t.prcc, t.significant, strict=True)
+            ]
+            y = np.arange(len(t))
+            ax.barh(y, t.prcc, color=colours, height=0.7, zorder=2)
+            ax.errorbar(
+                t.prcc,
+                y,
+                xerr=[t.prcc - t.lo, t.hi - t.prcc],
+                fmt="none",
+                ecolor=INK,
+                elinewidth=0.8,
+                capsize=1.5,
+                zorder=3,
+            )
+            for x in (-dummy, dummy):
+                ax.axvline(x, color=MUTED, ls="--", lw=0.8, zorder=1)
+            ax.axvline(0, color=INK, lw=0.8, zorder=1)
+            ax.set_yticks(y, [_flabel(f) for f in t.factor], fontsize=7.5)
+            ax.set_xlim(-1.05, 1.05)
+            ax.grid(axis="y", visible=False)
+            ax.set_title(OUTCOME_LABELS.get(outc, outc), loc="left")
+        for ax in axes.flat[len(outcomes) :]:
+            ax.set_visible(False)
+        for ax in axes[-1]:
+            ax.set_xlabel("PRCC")
+        n = int(d.n.max())
+        fig.suptitle(
+            f"E7 {block}: {BLOCK_TITLES.get(block, block)} — PRCC, top {top} factors "
+            f"(n = {n} samples; grey = not significant, Bonferroni; dashed = ± dummy)",
+            x=0.01,
+            ha="left",
+            fontsize=10,
+        )
+        fig.tight_layout()
+        return _save(fig, out, f"E7_tornado_{block}")
+
+
+def e7_overview(prcc: pd.DataFrame, block: str, out: Path) -> list[Path]:
+    """PRCC of every factor (rows) for every outcome (columns) of one block.
+
+    Non-significant cells (Bonferroni) are left blank, so the pattern shows only the
+    effects that clear the noise floor.
+    """
+    d = prcc[prcc.block == block]
+    factors = list(dict.fromkeys(d.factor))
+    outcomes = list(dict.fromkeys(d.outcome))
+    V = d.pivot(index="factor", columns="outcome", values="prcc").loc[factors, outcomes]
+    S = d.pivot(index="factor", columns="outcome", values="significant")
+    M = V.where(S.loc[factors, outcomes].astype(bool)).to_numpy(float)
+    norm = mpl.colors.Normalize(-1, 1)
+    with mpl.rc_context(STYLE):
+        fig, ax = plt.subplots(figsize=(0.75 * len(outcomes) + 3.4, 0.3 * len(factors) + 1.9))
+        ax.imshow(M, cmap=DIV_RED_BLUE, norm=norm, aspect="auto")
+        for (i, j), v in np.ndenumerate(M):
+            if np.isfinite(v):
+                ax.text(
+                    j,
+                    i,
+                    f"{v:.2f}".replace("-", "−"),
+                    ha="center",
+                    va="center",
+                    fontsize=7,
+                    color="white" if abs(v) > 0.55 else INK,
+                )
+        ax.set_yticks(range(len(factors)), [_flabel(f) for f in factors], fontsize=7.5)
+        ax.set_xticks(
+            range(len(outcomes)),
+            [OUTCOME_LABELS.get(o, o) for o in outcomes],
+            rotation=40,
+            ha="right",
+            fontsize=7.5,
+        )
+        ax.grid(False)
+        sm = mpl.cm.ScalarMappable(norm=norm, cmap=DIV_RED_BLUE)
+        fig.colorbar(sm, ax=ax, shrink=0.6, pad=0.02, label="PRCC")
+        ax.set_title(
+            f"E7 {block}: PRCC (n = {int(d.n.max())}; blank = not significant, Bonferroni)",
+            loc="left",
+        )
+        return _save(fig, out, f"E7_overview_{block}")
+
+
+def e7_scatter(
+    df: pd.DataFrame, prcc: pd.DataFrame, block: str, outcomes: list[str], out: Path, top: int = 3
+) -> list[Path]:
+    """Outcome against its strongest factors, with binned medians (checks monotonicity).
+
+    PRCC assumes monotone effects; the binned medians (deciles of the factor) show where
+    a relationship bends or reverses.
+    """
+    d = prcc[prcc.block == block]
+    with mpl.rc_context(STYLE):
+        fig, axes = plt.subplots(
+            len(outcomes), top, figsize=(3.3 * top, 2.4 * len(outcomes)), squeeze=False
+        )
+        for row, outc in zip(axes, outcomes, strict=True):
+            t = d[(d.outcome == outc) & (d.factor != "dummy")].dropna(subset=["prcc"])
+            best = t.reindex(t.prcc.abs().sort_values(ascending=False).index).factor.head(top)
+            for ax, f in zip(row, best, strict=False):
+                x, y = df[f].to_numpy(float), df[outc].to_numpy(float)
+                ok = np.isfinite(y)
+                ax.scatter(x[ok], y[ok], s=5, color=BLUE_RAMP[0], alpha=0.5, lw=0, zorder=2)
+                if np.unique(x).size > 10:
+                    edges = np.unique(np.quantile(x[ok], np.linspace(0, 1, 11)))
+                    idx = np.searchsorted(edges, x[ok], side="right") - 1
+                    idx = np.clip(idx, 0, edges.size - 2)
+                    mids = [np.median(x[ok][idx == b]) for b in range(edges.size - 1)]
+                    meds = [np.median(y[ok][idx == b]) for b in range(edges.size - 1)]
+                else:
+                    mids = np.unique(x[ok])
+                    meds = [np.median(y[ok][x[ok] == v]) for v in mids]
+                ax.plot(mids, meds, color=BLUE_RAMP[4], lw=1.8, marker="o", ms=3, zorder=3)
+                r = float(t[t.factor == f].prcc.iloc[0])
+                ax.set_title(f"PRCC {r:+.2f}".replace("-", "−"), loc="right", fontsize=8)
+                ax.set_xlabel(_flabel(f))
+            row[0].set_ylabel(OUTCOME_LABELS.get(outc, outc))
+        fig.suptitle(
+            f"E7 {block}: outcomes against their three strongest factors "
+            "(dots = samples; line = median by factor decile)",
+            x=0.01,
+            ha="left",
+            fontsize=10,
+        )
+        fig.tight_layout()
+        return _save(fig, out, f"E7_scatter_{block}")
+
+
+E7_SCATTER = {
+    "mechanics": ["output_vs_equal", "gini", "early_ratio", "premium_rel_bound"],
+    "safeguards": ["premium", "collateral_loss"],
+    "evolution": ["share_sincere", "strategic_play", "share_in_cartels"],
+}
+
+
+def plot_e7(results: Path) -> list[Path]:
+    """All E7 figures, per block: overview heatmap, tornado plots and scatter checks."""
+    src = results / "E7"
+    prcc = pd.read_parquet(src / "E7_prcc.parquet")
+    figs = src / "figures"
+    paths: list[Path] = []
+    for block in dict.fromkeys(prcc.block):
+        paths += e7_overview(prcc, block, figs)
+        paths += e7_tornado(prcc, block, figs)
+        df = pd.read_parquet(src / f"E7_{block}.parquet")
+        paths += e7_scatter(df, prcc, block, E7_SCATTER.get(block, []), figs)
+    return paths
+
+
 PLOTTERS: dict[str, Callable[[Path], list[Path]]] = {
     "E0": plot_e0,
     "E1": plot_e1,
@@ -1370,4 +1612,5 @@ PLOTTERS: dict[str, Callable[[Path], list[Path]]] = {
     "E4": plot_e4,
     "E5": plot_e5,
     "E6": plot_e6,
+    "E7": plot_e7,
 }
