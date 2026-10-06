@@ -1266,7 +1266,8 @@ def e6_selection(cells: pd.DataFrame, out: Path) -> list[Path]:
             ax.set(title=f"c_m = {cm:g}", xlabel="Transparency regime")
             ax.grid(axis="x", visible=False)
         axes[0].set_ylabel("Sincere share (mean of last years)")
-        axes[0].legend(loc="lower left", fontsize=7.5)
+        h, lab = axes[0].get_legend_handles_labels()
+        fig.legend(h, lab, loc="lower center", ncol=3, fontsize=7.5, bbox_to_anchor=(0.5, -0.06))
         fig.suptitle(
             "Selection or drift? Sincere share after 100 years without audits "
             f"({d.seed.nunique()} seeds, 95 % intervals)",
@@ -1343,7 +1344,12 @@ def plot_e6(results: Path) -> list[Path]:
     tr = pd.read_parquet(src / "E6_trajectories.parquet")
     cells = pd.read_parquet(src / "E6_cells.parquet")
     figs = src / "figures"
-    return e6_prevalence(tr, figs, 0.05) + e6_prevalence(tr, figs, 0.2) + e6_summary(cells, figs)
+    return (
+        e6_prevalence(tr, figs, 0.05)
+        + e6_prevalence(tr, figs, 0.2)
+        + e6_summary(cells, figs)
+        + e6_selection(cells, figs)
+    )
 
 
 PLOTTERS: dict[str, Callable[[Path], list[Path]]] = {
