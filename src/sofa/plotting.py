@@ -1325,7 +1325,17 @@ def e6_summary(cells: pd.DataFrame, out: Path) -> list[Path]:
             ax.set_xlabel(label + (" (%)" if col == "output_vs_equal" else ""))
             ax.grid(axis="y", visible=False)
         axes[0].set_yticks(range(len(order)), order)
-        axes[0].legend(loc="lower right", fontsize=7.5, title="Moral cost", title_fontsize=7.5)
+        h, lab = axes[0].get_legend_handles_labels()
+        fig.legend(
+            h,
+            lab,
+            loc="lower center",
+            ncol=2,
+            fontsize=7.5,
+            title="Moral cost",
+            title_fontsize=7.5,
+            bbox_to_anchor=(0.5, -0.08),
+        )
         fig.suptitle(
             f"After {int(d.attrs.get('T', 100))} years of imitation: mean over the "
             f"last {int(d.attrs.get('T_eval', 20))} years and 95 % interval over "

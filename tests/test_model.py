@@ -126,7 +126,8 @@ def test_cap_in_model_uses_pool_and_conserves():
 @pytest.mark.parametrize(
     "change",
     [
-        {"p_audit": 0.1},
+        {"turnover": True, "adaptation": True},
+        {"mechanism": "panel", "adaptation": True},
         {"K_max": 3.0},
         {"turnover": True, "cartels": True},
     ],
