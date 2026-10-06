@@ -21,9 +21,17 @@ IntArray = np.ndarray
 EARLY, MID, SENIOR = 0, 1, 2
 STAGE_NAMES = ("early", "mid", "senior")
 
-# Strategy codes (§4.4). Best-responders follow at Milestone 5.
-SINCERE, HERDER, RECIPROCATOR, CARTEL, DEFERENTIAL = 0, 1, 2, 3, 4
-STRATEGY_NAMES = ("sincere", "herder", "reciprocator", "cartel", "deferential")
+# Strategy codes (§4.4, §4.9). A shirker is a cartel member who secretly donates sincerely.
+SINCERE, HERDER, RECIPROCATOR, CARTEL, DEFERENTIAL, SHIRKER, BEST = 0, 1, 2, 3, 4, 5, 6
+STRATEGY_NAMES = (
+    "sincere",
+    "herder",
+    "reciprocator",
+    "cartel",
+    "deferential",
+    "shirker",
+    "best_responder",
+)
 
 
 @dataclass(frozen=True)
@@ -226,7 +234,12 @@ def assign_roles(pop: Population, p: Params, rngs: RNGStreams) -> Roles:
         cartel_id[members] = c
         strategy[members] = CARTEL
         cartels.append(members)
-    for code, share, name in ((HERDER, p.x_herd, "herder"), (RECIPROCATOR, p.x_recip, "recip")):
+    shares = (
+        (HERDER, p.x_herd, "herder"),
+        (RECIPROCATOR, p.x_recip, "recip"),
+        (BEST, p.x_best, "best"),
+    )
+    for code, share, name in shares:
         n = round(share * N)
         if n == 0:
             continue

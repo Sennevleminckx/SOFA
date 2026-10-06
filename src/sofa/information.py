@@ -15,7 +15,15 @@ from __future__ import annotations
 
 import numpy as np
 
-from sofa.population import CARTEL, DEFERENTIAL, HERDER, RECIPROCATOR, SINCERE
+from sofa.population import (
+    BEST,
+    CARTEL,
+    DEFERENTIAL,
+    HERDER,
+    RECIPROCATOR,
+    SHIRKER,
+    SINCERE,
+)
 
 REGIMES: tuple[str, ...] = ("T0", "T1", "T2", "T3")
 
@@ -26,6 +34,8 @@ REQUIRED_REGIME: dict[int, int] = {
     RECIPROCATOR: 2,  # needs the identity and amount of own donors
     CARTEL: 0,  # operates under any regime (monitoring depends on the regime, §4.9)
     DEFERENTIAL: 0,
+    SHIRKER: 0,  # donates sincerely; needs nothing
+    BEST: 3,  # needs the whole ledger F(t − 1) to compute return multipliers (§4.4)
 }
 
 

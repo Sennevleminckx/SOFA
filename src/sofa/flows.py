@@ -162,6 +162,20 @@ def return_multipliers(W: FloatArray, alpha: float) -> FloatArray:
     return np.linalg.solve(np.eye(N) - alpha * W.T, np.eye(N))
 
 
+def return_multiplier_rows(W: FloatArray, alpha: float, rows: np.ndarray) -> FloatArray:
+    """Rows ``rows`` of Γ = (I − αWᵀ)⁻¹, by one solve with (I − αW) (no explicit inverse).
+
+    Row i of Γ is the solution of (I − αW) x = e_i, because (Γ_i·)ᵀ = (I − αW)⁻¹ e_i.
+    """
+    N = W.shape[0]
+    rows = np.asarray(rows, dtype=int)
+    if rows.size == 0:
+        return np.zeros((0, N))
+    E = np.zeros((N, rows.size))
+    E[rows, np.arange(rows.size)] = 1.0
+    return np.linalg.solve(np.eye(N) - alpha * W, E).T
+
+
 def cycle_return_shares(
     W: FloatArray, alpha: float, L: int = 3, weighted: bool = True
 ) -> FloatArray:

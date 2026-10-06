@@ -15,8 +15,9 @@ from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
+import scipy.linalg
 
-from sofa import baselines, metrics
+from sofa import adaptation, baselines, metrics
 from sofa.config import Params
 from sofa.flows import (
     FlowState,
@@ -28,12 +29,16 @@ from sofa.information import effective_strategies
 from sofa.network import build_network
 from sofa.perception import draw_taste, perceived_quality, yearly_noise
 from sofa.population import (
+    BEST,
+    CARTEL,
     DEFERENTIAL,
     EARLY,
     HERDER,
     RECIPROCATOR,
     SENIOR,
+    SHIRKER,
     SINCERE,
+    STRATEGY_NAMES,
     Population,
     Roles,
     assign_roles,
@@ -84,10 +89,15 @@ def build_world(p: Params, rngs: RNGStreams) -> World:
 def check_implemented(p: Params) -> None:
     """Raise if a mechanism from a later milestone, or an unsupported combination, is on."""
     pending = {
-        "p_audit (S5, Milestone 5)": p.p_audit > 0,
         "K_max (S6)": p.K_max is not None,
         "turnover with cartels (membership of departing researchers is not specified)": (
             p.turnover and p.cartels
+        ),
+        "turnover with adaptation (cartel membership of departing researchers)": (
+            p.turnover and p.adaptation
+        ),
+        "adaptation or audits with a non-SOFA mechanism": (
+            p.mechanism != "sofa" and (p.adaptation or p.p_audit > 0)
         ),
     }
     on = [name for name, flag in pending.items() if flag]
@@ -105,6 +115,7 @@ class Results:
     seed: int
     yearly: pd.DataFrame  # one row per year: metrics of §6
     snapshots: dict[int, dict[str, FloatArray]] = field(default_factory=dict)  # eval years
+    cartel_log: list[dict] = field(default_factory=list)  # founding/end years (adaptation)
 
     def summary(self) -> dict[str, float]:
         """Mean of each yearly metric over the last T_eval years (§6)."""
@@ -178,6 +189,17 @@ class SOFAModel:
         )
         self.cost = baselines.mechanism_cost(p.mechanism, self.N, p)  # §4.8 overhead
         self.y = np.zeros(self.N)  # last year's realised output
+        # --- Behaviour change (§4.9). The registry exists only with adaptation on; then
+        # strategies and cartel membership change, otherwise ``roles`` stays fixed.
+        self.strategy = self.roles.strategy.copy() if p.adaptation else self.roles.strategy
+        self.registry = (
+            adaptation.CartelRegistry.from_cartels(self.N, self.roles.cartels)
+            if p.adaptation
+            else None
+        )
+        self.W_prev: FloatArray | None = None  # last year's W (best responses, shirking)
+        self._lu, self._lu_key = None, None  # LU factors of (I − αW) for Γ rows
+        self.sanctions = np.zeros(self.N)
 
     # --- What can change between years ------------------------------------------------
     def perception_static(self) -> bool:
@@ -200,8 +222,38 @@ class SOFAModel:
             return False
         if p.mechanism in ("equal", "oracle"):
             return not p.turnover
-        reactive = np.isin(self.eff, (HERDER, RECIPROCATOR)).any()
-        return self.perception_static() and not reactive
+        reactive = np.isin(self.eff, (HERDER, RECIPROCATOR, BEST)).any()
+        changing = p.adaptation or p.p_audit > 0 or p.p_peer > 0
+        return self.perception_static() and not reactive and not changing
+
+    def gamma_rows(self, W: FloatArray, rows: np.ndarray) -> FloatArray:
+        """Rows of the return multipliers Γ = (I − αWᵀ)⁻¹ for W (§4.4).
+
+        (I − αW) is LU-factorised once per W and reused: this year's shirking decisions and
+        next year's best responses use the same matrix. Row i solves (I − αW) x = e_i.
+        """
+        if self._lu_key is not W:
+            self._lu = scipy.linalg.lu_factor(np.eye(self.N) - self.p.alpha * W)
+            self._lu_key = W
+        E = np.zeros((self.N, len(rows)))
+        E[np.asarray(rows, dtype=int), np.arange(len(rows))] = 1.0
+        return scipy.linalg.lu_solve(self._lu, E).T
+
+    # --- Cartels (static roles, or the registry under adaptation) -------------------------
+    def cartel_lists(self) -> list:
+        """Member lists of the cartels that route money (two or more members)."""
+        if self.registry is None:
+            return list(self.roles.cartels)
+        return [np.asarray(self.registry.members[c]) for c in self.registry.active()]
+
+    def in_active_cartel(self) -> np.ndarray:
+        """Boolean mask of members of cartels that route money."""
+        if self.registry is None:
+            return self.roles.in_cartel
+        mask = np.zeros(self.N, dtype=bool)
+        for members in self.cartel_lists():
+            mask[members] = True
+        return mask
 
     # --- Donation matrix (§3 steps 1–3) ------------------------------------------------
     def strategy_rows(self, t: int) -> FloatArray:
@@ -216,8 +268,14 @@ class SOFAModel:
         if recip.any():  # §4.4: uses own donors in F(t − 1), visible under T2+
             g, received = reciprocity_shares(self.F)
             W[recip] = reciprocator_rows(W[recip], g[recip], received[recip], p.rho)
-        for members in self.roles.cartels:  # §4.4 cartel topologies
-            W[members] = cartel_member_rows(S, E, members, p.phi, p.m, p.beta, p.topology)
+        for members in self.cartel_lists():  # §4.4 cartel topologies
+            rows = cartel_member_rows(S, E, members, p.phi, p.m, p.beta, p.topology)
+            routing = eff[members] == CARTEL  # shirkers keep their sincere row (§4.9)
+            W[members[routing]] = rows[routing]
+        best = np.nonzero(eff == BEST)[0]
+        if best.size and self.W_prev is not None:  # §4.4: best responses need F(t − 1), T3
+            gamma = self.gamma_rows(self.W_prev, best)
+            W[best] = adaptation.best_response_rows(gamma, E[best], p.cap)
         return W
 
     def _scores(self, t: int) -> tuple[FloatArray, np.ndarray, FloatArray]:
@@ -289,8 +347,136 @@ class SOFAModel:
             self.K = self.comparator_allocation(self.t)
             self.R, self.pool = self.K, 0.0
         row = self.produce_and_record(W)  # steps 6 and 8
+        if W is not None and (p.p_audit > 0 or p.p_peer > 0):  # step 7: S5 and reports
+            row.update(self.audit(W))
+        if p.adaptation:  # step 7: imitation, shirking, detection, mutation (§4.9)
+            row.update(self.adapt(W))
+        self.W_prev = W
         self.update_population()  # step 7: turnover and contact resampling
         return row
+
+    # --- Audits and peer reports (§4.6 S5, §4.9) ----------------------------------------
+    def audit(self, W: FloatArray) -> dict[str, float]:
+        """S5: with probability p_audit the platform sanctions agents with r_i > r_thr.
+
+        Under T3, each routing cartel is also reported by peers with probability p_peer;
+        its members are sanctioned and the cartel is dissolved. Sanctions (a share s of
+        K) go to the pool, so money is conserved.
+        """
+        p, t = self.p, self.t
+        rng = self.rngs.fresh("adaptation", "audit", t)
+        audit_now = rng.random() < p.p_audit
+        r = cycle_return_shares(W, p.alpha, p.L, p.s4_weighted) if audit_now else None
+        sanc, flagged = adaptation.audit_sanctions(
+            self.K, r if r is not None else np.zeros(self.N), p.r_thr, p.s_sanction, audit_now
+        )
+        reported = 0
+        if p.regime == "T3" and p.p_peer > 0:
+            for members in self.cartel_lists():
+                if rng.random() < p.p_peer:
+                    reported += 1
+                    sanc[members] = np.maximum(sanc[members], p.s_sanction * self.K[members])
+                    if self.registry is not None:
+                        c = self.registry.cartel_id[members[0]]
+                        for i in self.registry.dissolve(c, t):
+                            self.strategy[i] = SINCERE
+        self.sanctions = sanc
+        self.K = self.K - sanc
+        self.pool += float(sanc.sum())
+        return {
+            "audited": float(audit_now),
+            "flagged": float(flagged.sum()),
+            "sanctions_total": float(sanc.sum()),
+            "cartels_reported": float(reported),
+        }
+
+    # --- Behaviour change (§4.9) ----------------------------------------------------------
+    def adapt(self, W: FloatArray) -> dict[str, float]:
+        """Shirking, detection, imitation and mutation, in that order (§4.9).
+
+        Decisions use the state at the start of the step (payoffs and visible strategies)
+        and are then applied in turn. Records strategy shares and cartel statistics.
+        """
+        p, t, reg = self.p, self.t, self.registry
+        if t <= p.T_burn_strategies:
+            return self._strategy_stats()
+        rng = self.rngs.fresh("adaptation", "imitate", t)
+        strat = self.strategy
+        in_active = self.in_active_cartel()
+        strategic = np.isin(self.eff, (HERDER, RECIPROCATOR, BEST)) | (
+            (self.eff == CARTEL) & in_active
+        )
+        pi = adaptation.payoffs(self.K + self.sanctions, strategic, p.c_m, p.B, self.sanctions)
+        # Shirking: revising active members shirk when c_m exceeds their own return loss
+        members = np.nonzero((strat == CARTEL) & in_active)[0]
+        revising = members[rng.random(members.size) < p.r_imit]
+        if revising.size:
+            gamma = self.gamma_rows(W, revising)
+            W_sincere = self._scores(t)[2]
+            loss = adaptation.shirk_return_loss(
+                W[revising], W_sincere[revising], self.R[revising], gamma, p.alpha
+            )
+            strat[revising[p.c_m * p.B > loss]] = SHIRKER
+        # Detection by partners: p_det = 1 under T2/T3, p_low under T0/T1
+        p_det = adaptation.detection_probability(p.regime, p.p_low)
+        shirkers = np.nonzero(strat == SHIRKER)[0]
+        detected = shirkers[rng.random(shirkers.size) < p_det]
+        for i in detected:
+            reg.leave(int(i), t)
+            strat[i] = SINCERE
+        # Imitation: one random contact, Fermi rule, visible strategies (shirking is secret)
+        visible = np.where(
+            reg.cartel_id >= 0, CARTEL, np.where(strat == DEFERENTIAL, SINCERE, strat)
+        )
+        cartel_of = reg.cartel_id.copy()
+        learners, models = adaptation.imitation_pairs(self.A, p.r_imit, rng)
+        if learners.size:
+            prob = adaptation.fermi_probability(
+                pi[learners], pi[models], p.kappa_F, float(self.K.mean())
+            )
+            adopt = rng.random(learners.size) < prob
+            for i, j in zip(learners[adopt], models[adopt], strict=True):
+                self._switch(int(i), int(visible[j]), int(cartel_of[j]), rng)
+        # Mutation
+        codes = [STRATEGY_NAMES.index(name) for name in p.evo_strategies]
+        for i in np.nonzero(rng.random(self.N) < p.mu_s)[0]:
+            self._switch(int(i), int(rng.choice(codes)), -2, rng)
+        self.eff, self.n_fallbacks = effective_strategies(strat, p.regime)
+        out = self._strategy_stats()
+        out["shirk_new"] = float((strat[revising] == SHIRKER).sum()) if revising.size else 0.0
+        out["shirk_detected"] = float(detected.size)
+        return out
+
+    def _switch(self, i: int, code: int, cartel: int, rng: np.random.Generator) -> None:
+        """Agent i adopts strategy ``code``; joining a cartel goes through the registry.
+
+        ``cartel`` ≥ 0 joins that cartel (or founds one if it is full); −2 joins a random
+        open cartel, or founds one if none is open.
+        """
+        reg, p = self.registry, self.p
+        if code == CARTEL:
+            if cartel == -2:
+                open_ = reg.open_cartels(p.k_max)
+                cartel = int(rng.choice(open_)) if open_ else -1
+            if cartel >= 0 and reg.cartel_id[i] == cartel:
+                return
+            reg.join(i, cartel, p.k_max, self.t)
+            self.strategy[i] = CARTEL
+        else:
+            reg.leave(i, self.t)
+            self.strategy[i] = SINCERE if code == DEFERENTIAL else code
+
+    def _strategy_stats(self) -> dict[str, float]:
+        """Strategy shares (true strategies) and cartel statistics."""
+        out = {
+            f"share_{name}": float(np.mean(self.strategy == code))
+            for code, name in enumerate(STRATEGY_NAMES)
+        }
+        active = self.cartel_lists()
+        out["n_cartels"] = float(len(active))
+        out["cartel_size_mean"] = float(np.mean([len(m) for m in active])) if active else 0.0
+        out["share_in_cartels"] = float(sum(len(m) for m in active) / self.N)
+        return out
 
     def produce_and_record(self, W: FloatArray | None) -> dict[str, float]:
         """Step 6 (§4.8): output and visibility; then the year's metrics (§6).
@@ -387,7 +573,7 @@ class SOFAModel:
         row["reciprocity"] = metrics.reciprocity_index(self.F)
         row["recipients_mean"] = float((W > 0).sum(axis=1).mean()) if W is not None else np.nan
         row["fallbacks"] = self.n_fallbacks
-        members = self.roles.in_cartel
+        members = self.in_active_cartel()
         row["cartel_K_share"] = float(self.K[members].sum() / self.K.sum())
         if W is not None and self.t > p.T - p.T_eval:  # §6: cycle-return share (eval years)
             r = cycle_return_shares(W, p.alpha, p.L)
@@ -413,7 +599,10 @@ class SOFAModel:
             if self.t > p.T - p.T_eval:
                 snaps[self.t] = {"R": self.R.copy(), "K": self.K.copy()}
             K_prev = self.K.copy()
-        return Results(params=p, seed=self.seed, yearly=pd.DataFrame(rows), snapshots=snaps)
+        log = self.registry.survival(self.t) if self.registry is not None else []
+        return Results(
+            params=p, seed=self.seed, yearly=pd.DataFrame(rows), snapshots=snaps, cartel_log=log
+        )
 
     # --- Shortcut for static allocations ------------------------------------------------
     def equilibrium_state(self) -> tuple[FlowState, FloatArray]:
