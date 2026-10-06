@@ -116,3 +116,29 @@ def test_e5_runner(tmp_path):
     assert len(comp) == 2 + 1 + 1  # SOFA over two σ_p, one cell each for the others
     assert float(_meta(paths["cells"])["sofa.annual_crosscheck_max_rel_diff"]) < 1e-9
     assert (cells.total_K - 120).abs().max() < 1e-3  # short T: SOFA transient α^(t+1) remains
+
+
+def test_e6_runner(tmp_path):
+    from sofa.experiments import run_e6
+
+    cfg = {
+        "base": BASE.replace(
+            T=12, T_eval=4, adaptation=True, cartels=True, x_C=0.05, x_herd=0.05, x_best=0.05
+        ),
+        "regimes": ["T0", "T3"],
+        "audits": {
+            "none": {},
+            "S5 audit": {"p_audit": 1.0, "s4_weighted": False},
+            "T3 peer reports": {"p_peer": 0.5},
+        },
+        "c_ms": [0.05],
+        "trajectory_metrics": ["share_sincere", "share_cartel", "n_cartels"],
+    }
+    paths = run_e6(cfg, 1, tmp_path, n_jobs=1)
+    cells = pd.read_parquet(paths["cells"])
+    traj = pd.read_parquet(paths["trajectories"])
+    logs = pd.read_parquet(paths["cartels"])
+    assert len(cells) == 2 * 2 + 1  # peer reports only under T3
+    assert set(cells[cells.audit == "T3 peer reports"].regime) == {"T3"}
+    assert len(traj) == len(cells) * 12
+    assert {"founded", "ended", "censored"} <= set(logs.columns)

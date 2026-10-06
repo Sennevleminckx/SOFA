@@ -1,0 +1,30 @@
+# E6 Evolution (Milestone 5, §7). Imitation dynamics × transparency regime × audit.
+# Start: 80 % sincere, 5 % each of herders, reciprocators, best-responders and cartel members
+# (5-member cliques, φ = 1). Strategies then evolve by imitation (Fermi rule) and mutation;
+# cartel members may shirk (myopic rule), shirkers are detected with p_det by regime, and
+# the platform may audit (S5) or, under T3, peers may report cartels.
+# Every cell is simulated: strategies change from year to year.
+experiment: E6
+description: Long-run prevalence of strategic behaviour under imitation, by regime and audit.
+base:
+  N: 500
+  T: 100
+  T_eval: 20
+  adaptation: true
+  cartels: true
+  x_C: 0.05
+  k: 5
+  x_herd: 0.05
+  x_recip: 0.05
+  x_best: 0.05
+regimes: [T0, T1, T2, T3]
+audits:            # name → overrides
+  none: {}
+  "S5 audit": {p_audit: 0.5, s4_weighted: false, r_thr: 0.2, s_sanction: 0.5}
+  "T3 peer reports": {p_peer: 0.1}      # applied under T3 only
+c_ms: [0.05, 0.2]
+trajectory_metrics: [share_sincere, share_herder, share_reciprocator, share_cartel,
+                     share_shirker, share_best_responder, share_in_cartels, n_cartels,
+                     cartel_size_mean, output_vs_equal, gini, early_ratio, fallbacks,
+                     sanctions_total]
+seeds: 50

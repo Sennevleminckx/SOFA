@@ -887,10 +887,25 @@ def plot_e4(results: Path) -> list[Path]:
 # --- E5 ---------------------------------------------------------------------------------
 MECH_STYLE = {  # (mechanism, b_share) → style; hue = mechanism, line style = b_share
     ("sofa", 0.0): {"color": "#2a78d6", "ls": "-", "marker": "o", "label": "SOFA"},
-    ("panel", 0.0): {"color": "#eb6834", "ls": "-", "marker": "s", "label": "Panel (b = 0)"},
-    ("panel", 0.5): {"color": "#eb6834", "ls": "--", "marker": "s", "label": "Panel (b = 0.5)"},
-    ("lottery", 0.0): {"color": "#1baf7a", "ls": "-", "marker": "^", "label": "Lottery (b = 0)"},
-    ("lottery", 0.5): {"color": "#1baf7a", "ls": "--", "marker": "^", "label": "Lottery (b = 0.5)"},
+    ("panel", 0.0): {"color": "#eb6834", "ls": "--", "marker": "s", "label": "Panel (b = 0, spec)"},
+    ("panel", 0.5): {
+        "color": "#eb6834",
+        "ls": "-",
+        "marker": "s",
+        "label": "Panel (matched floor)",
+    },
+    ("lottery", 0.0): {
+        "color": "#1baf7a",
+        "ls": "--",
+        "marker": "^",
+        "label": "Lottery (b = 0, spec)",
+    },
+    ("lottery", 0.5): {
+        "color": "#1baf7a",
+        "ls": "-",
+        "marker": "^",
+        "label": "Lottery (matched floor)",
+    },
 }
 REF_STYLE = {
     ("equal", 0.0): ("A0 equal split", MUTED, ":"),
@@ -920,6 +935,8 @@ def e5_trajectories(
 ) -> list[Path]:
     """Concentration, equity and stability over time per mechanism, by λ (§7 E5)."""
     d = tr[np.isclose(tr.omega, omega) & (tr.turnover == turnover)]
+    if "r_A" in d:
+        d = d[np.isclose(d.r_A, 0.0)]  # contact resampling is shown in the equity figure
     lams = sorted(d.lam.unique())
     rows = (
         ("gini", "Gini(K)"),
@@ -988,15 +1005,23 @@ def e5_equity(cells: pd.DataFrame, out: Path) -> list[Path]:
                     & np.isclose(d.b_share, key[1])
                     & (d.turnover == turnover)
                 ]
-                for colour, om in zip(blues, omegas, strict=False):
-                    _band(
-                        ax,
-                        "points",
-                        sub[np.isclose(sub.omega, om)],
-                        "early_ratio",
-                        "lam",
-                        {"color": colour, "marker": "o", "label": f"ω = {om:g}"},
-                    )
+                r_vals = sorted(sub.r_A.unique()) if "r_A" in sub else [0.0]
+                for r_a in r_vals:
+                    sub_r = sub[np.isclose(sub.r_A, r_a)] if "r_A" in sub else sub
+                    for colour, om in zip(blues, omegas, strict=False):
+                        _band(
+                            ax,
+                            "points",
+                            sub_r[np.isclose(sub_r.omega, om)],
+                            "early_ratio",
+                            "lam",
+                            {
+                                "color": colour,
+                                "marker": "o" if r_a == 0 else "s",
+                                "ls": "-" if r_a == 0 else "--",
+                                "label": f"ω = {om:g}" + ("" if r_a == 0 else f", r_A = {r_a:g}"),
+                            },
+                        )
                 if r == 0:
                     ax.set_title(MECH_STYLE[key]["label"], loc="left")
                 if c == 0:
@@ -1015,7 +1040,8 @@ def e5_equity(cells: pd.DataFrame, out: Path) -> list[Path]:
         )
         fig.suptitle(
             "H5: early-career share of K ÷ population share at the end of the run "
-            f"(1 = proportional; {d.seed.nunique()} seeds)",
+            f"(1 = proportional; dashed SOFA lines: contact resampling r_A = 0.1; "
+            f"{d.seed.nunique()} seeds)",
             x=0.01,
             ha="left",
             fontsize=10,
@@ -1130,6 +1156,136 @@ def plot_e5(results: Path) -> list[Path]:
     )
 
 
+# --- E6 ---------------------------------------------------------------------------------
+STRATEGY_STYLE = {  # fixed categorical order (never cycled)
+    "share_sincere": ("Sincere", "#2a78d6"),
+    "share_herder": ("Herder", "#eb6834"),
+    "share_reciprocator": ("Reciprocator", "#1baf7a"),
+    "share_cartel": ("Cartel member", "#e34948"),
+    "share_shirker": ("Shirker", "#e87ba4"),
+    "share_best_responder": ("Best-responder", "#eda100"),
+}
+
+
+def e6_prevalence(tr: pd.DataFrame, out: Path, c_m: float = 0.05) -> list[Path]:
+    """Strategy shares over time, by regime (columns) and audit (rows) (§7 E6)."""
+    d = tr[np.isclose(tr.c_m, c_m)]
+    cols = [
+        ("T0", "none"),
+        ("T1", "none"),
+        ("T2", "none"),
+        ("T3", "none"),
+        ("T3", "T3 peer reports"),
+    ]
+    rows = ["none", "S5 audit"]
+    with mpl.rc_context(STYLE):
+        fig, axes = plt.subplots(2, 5, figsize=(14, 6.4), sharex=True, sharey=True)
+        for r, audit in enumerate(rows):
+            for c, (regime, col_audit) in enumerate(cols):
+                ax = axes[r, c]
+                use = col_audit if audit == "none" else audit
+                if audit != "none" and col_audit != "none":
+                    ax.set_visible(False)
+                    continue
+                sub = d[(d.regime == regime) & (d.audit == use)]
+                for col, (label, colour) in STRATEGY_STYLE.items():
+                    if col in sub and len(sub):
+                        _band(ax, "lines", sub, col, "year", {"color": colour, "label": label})
+                title = regime if use == "none" else f"{regime}, {use}"
+                ax.set_title(title, loc="left", fontsize=9)
+                if c == 0:
+                    ax.set_ylabel(f"Population share\n({'no audit' if audit == 'none' else audit})")
+                if r == 1 or (r == 0 and c == 4):
+                    ax.set_xlabel("Year")
+        h, lab = axes[0, 0].get_legend_handles_labels()
+        fig.legend(
+            h,
+            lab,
+            loc="center left",
+            bbox_to_anchor=(1.0, 0.5),
+            fontsize=7.5,
+            title="Strategy",
+            title_fontsize=7.5,
+        )
+        fig.suptitle(
+            f"Evolution of strategies under imitation (c_m = {c_m:g}; mean and 95 % "
+            f"interval over {d.seed.nunique()} seeds)",
+            x=0.01,
+            ha="left",
+            fontsize=10,
+        )
+        fig.tight_layout()
+        return _save(fig, out, f"E6_prevalence_cm{c_m:g}")
+
+
+def e6_summary(cells: pd.DataFrame, out: Path) -> list[Path]:
+    """End-of-run sincere share, cartel membership and output, by regime × audit × c_m."""
+    d = cells.copy()
+    d["cell"] = d.regime + np.where(d.audit == "none", "", " · " + d.audit)
+    order = [
+        "T0",
+        "T1",
+        "T2",
+        "T3",
+        "T3 · T3 peer reports",
+        "T0 · S5 audit",
+        "T1 · S5 audit",
+        "T2 · S5 audit",
+        "T3 · S5 audit",
+    ]
+    order = [o for o in order if o in set(d.cell)][::-1]
+    panels = (
+        ("share_sincere", "Sincere share (end)"),
+        ("share_in_cartels", "Share in routing cartels (end)"),
+        ("output_vs_equal", "Output vs equal split (end)"),
+    )
+    cm_style = {0.05: ("#6da7ec", "o"), 0.2: ("#0d366b", "s")}
+    with mpl.rc_context(STYLE):
+        fig, axes = plt.subplots(1, 3, figsize=(12, 4.8), sharey=True)
+        for ax, (col, label) in zip(axes, panels, strict=True):
+            for j, (cm, (colour, marker)) in enumerate(cm_style.items()):
+                sub = d[np.isclose(d.c_m, cm)]
+                for i, cell in enumerate(order):
+                    x = sub[sub.cell == cell][col] * (100 if col == "output_vs_equal" else 1)
+                    if not len(x):
+                        continue
+                    m, lo, hi = _ci95(x)
+                    ax.errorbar(
+                        m,
+                        i + (j - 0.5) * 0.25,
+                        xerr=[[m - lo], [hi - m]],
+                        color=colour,
+                        marker=marker,
+                        ms=5,
+                        capsize=2,
+                        lw=1.3,
+                        label=f"c_m = {cm:g}" if i == 0 else None,
+                    )
+            ax.set_xlabel(label + (" (%)" if col == "output_vs_equal" else ""))
+            ax.grid(axis="y", visible=False)
+        axes[0].set_yticks(range(len(order)), order)
+        axes[0].legend(loc="lower right", fontsize=7.5, title="Moral cost", title_fontsize=7.5)
+        fig.suptitle(
+            f"After {int(d.attrs.get('T', 100))} years of imitation: mean over the "
+            f"last {int(d.attrs.get('T_eval', 20))} years and 95 % interval over "
+            f"{d.seed.nunique()} seeds",
+            x=0.01,
+            ha="left",
+            fontsize=10,
+        )
+        fig.tight_layout()
+        return _save(fig, out, "E6_summary")
+
+
+def plot_e6(results: Path) -> list[Path]:
+    """All E6 figures."""
+    src = results / "E6"
+    tr = pd.read_parquet(src / "E6_trajectories.parquet")
+    cells = pd.read_parquet(src / "E6_cells.parquet")
+    figs = src / "figures"
+    return e6_prevalence(tr, figs, 0.05) + e6_prevalence(tr, figs, 0.2) + e6_summary(cells, figs)
+
+
 PLOTTERS: dict[str, Callable[[Path], list[Path]]] = {
     "E0": plot_e0,
     "E1": plot_e1,
@@ -1137,4 +1293,5 @@ PLOTTERS: dict[str, Callable[[Path], list[Path]]] = {
     "E3": plot_e3,
     "E4": plot_e4,
     "E5": plot_e5,
+    "E6": plot_e6,
 }

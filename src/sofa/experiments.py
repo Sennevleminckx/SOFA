@@ -7,7 +7,7 @@ Usage::
 
 Implemented: E0 (verification against §2.3, M1), E1 (sincere mechanics, M2), E2 (cartels),
 E3 (transparency) and E4 (safeguards) (M3), E5 (feedback, equity, mechanism comparison;
-M4). Cells in which W cannot change are solved,
+M4), E6 (evolution of strategies; M5). Cells in which W cannot change are solved,
 with a guard and one annual cross-check per experiment (M2 review decision).
 """
 
@@ -24,7 +24,7 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
-from joblib import Parallel, delayed
+from joblib import Parallel, delayed, parallel_config
 
 from sofa import baselines, metrics
 from sofa.config import Params, load_experiment_config
@@ -44,6 +44,16 @@ CONFIG_DIR = Path(__file__).resolve().parents[2] / "experiments" / "configs"
 
 
 # --- Helpers ----------------------------------------------------------------------------
+def map_seeds(fn: Callable, cfg: dict[str, Any], seeds: int, n_jobs: int) -> list:
+    """Run ``fn(cfg, seed)`` for every seed in parallel, one BLAS thread per worker.
+
+    Without the thread limit each worker's linear algebra spawns its own threads and the
+    cores are oversubscribed (solves at N = 500 slowed from about 10 ms to 0.7 s).
+    """
+    with parallel_config(backend="loky", inner_max_num_threads=1):
+        return Parallel(n_jobs=n_jobs)(delayed(fn)(cfg, s) for s in range(seeds))
+
+
 def git_commit() -> str:
     """Return the current git commit (short hash), or "unknown" outside a repository."""
     try:
@@ -323,8 +333,8 @@ def _e0_shortfall_vs_N(cfg: dict[str, Any], seed: int) -> list[dict]:
 def run_e0(cfg: dict[str, Any], seeds: int, out: Path, n_jobs: int = -1) -> dict[str, Path]:
     """Run E0 over ``seeds`` seeds and write parquet tables to ``out/E0``."""
     t0 = time.perf_counter()
-    res = Parallel(n_jobs=n_jobs)(delayed(_e0_seed)(cfg, s) for s in range(seeds))
-    sf = Parallel(n_jobs=n_jobs)(delayed(_e0_shortfall_vs_N)(cfg, s) for s in range(seeds))
+    res = map_seeds(_e0_seed, cfg, seeds, n_jobs)
+    sf = map_seeds(_e0_shortfall_vs_N, cfg, seeds, n_jobs)
     checks = pd.DataFrame([r for c, _ in res for r in c])
     prem = pd.DataFrame([r for _, pr in res for r in pr])
     short = pd.DataFrame([r for rows in sf for r in rows])
@@ -400,7 +410,7 @@ def _e1_seed(cfg: dict[str, Any], seed: int) -> list[dict]:
 def run_e1(cfg: dict[str, Any], seeds: int, out: Path, n_jobs: int = -1) -> dict[str, Path]:
     """Run E1 over ``seeds`` seeds; write one tidy table to ``out/E1``."""
     t0 = time.perf_counter()
-    res = Parallel(n_jobs=n_jobs)(delayed(_e1_seed)(cfg, s) for s in range(seeds))
+    res = map_seeds(_e1_seed, cfg, seeds, n_jobs)
     df = pd.DataFrame([r for rows in res for r in rows])
     p: Params = cfg["base"]
     meta = dict(
@@ -496,7 +506,7 @@ def _e2_seed(cfg: dict[str, Any], seed: int) -> list[dict]:
 def run_e2(cfg: dict[str, Any], seeds: int, out: Path, n_jobs: int = -1) -> dict[str, Path]:
     """Run E2; write ``out/E2/E2_cells.parquet`` with the annual cross-check in metadata."""
     t0 = time.perf_counter()
-    res = Parallel(n_jobs=n_jobs)(delayed(_e2_seed)(cfg, s) for s in range(seeds))
+    res = map_seeds(_e2_seed, cfg, seeds, n_jobs)
     df = pd.DataFrame([r for rows in res for r in rows])
     p: Params = cfg["base"]
     world = build_world(p, RNGStreams(0))
@@ -548,7 +558,7 @@ def _e3_seed(cfg: dict[str, Any], seed: int) -> list[dict]:
 def run_e3(cfg: dict[str, Any], seeds: int, out: Path, n_jobs: int = -1) -> dict[str, Path]:
     """Run E3; write ``out/E3/E3_cells.parquet``."""
     t0 = time.perf_counter()
-    res = Parallel(n_jobs=n_jobs)(delayed(_e3_seed)(cfg, s) for s in range(seeds))
+    res = map_seeds(_e3_seed, cfg, seeds, n_jobs)
     df = pd.DataFrame([r for rows in res for r in rows])
     p: Params = cfg["base"]
     world = build_world(p, RNGStreams(0))
@@ -618,7 +628,7 @@ def _e4_seed(cfg: dict[str, Any], seed: int) -> list[dict]:
 def run_e4(cfg: dict[str, Any], seeds: int, out: Path, n_jobs: int = -1) -> dict[str, Path]:
     """Run E4; write ``out/E4/E4_cells.parquet``."""
     t0 = time.perf_counter()
-    res = Parallel(n_jobs=n_jobs)(delayed(_e4_seed)(cfg, s) for s in range(seeds))
+    res = map_seeds(_e4_seed, cfg, seeds, n_jobs)
     df = pd.DataFrame([r for rows in res for r in rows])
     p: Params = cfg["base"]
     world = build_world(p, RNGStreams(0))
@@ -680,20 +690,24 @@ def _e5_seed(cfg: dict[str, Any], seed: int) -> tuple[list[dict], list[dict], li
             paths.extend({"seed": seed, **label, **r} for r in path)
 
     for mech, b in cfg["mechanisms"]:
+        # Only SOFA uses the awareness network, so r_A is varied for SOFA alone (M4 review)
+        r_as = cfg.get("r_As", [0.0]) if mech == "sofa" else [0.0]
         for lam in cfg["lams"]:
             for omega in cfg["omegas"]:
                 for turnover in cfg["turnover"]:
-                    label = dict(
-                        mechanism=mech,
-                        b_share=b,
-                        lam=lam,
-                        omega=omega,
-                        turnover=turnover,
-                        theta=p.theta,
-                        sigma_p=p.sigma_p,
-                    )
-                    pc = e5_params(p, mech, b, lam=lam, omega=omega, turnover=turnover)
-                    add(cells, label, pc, with_path=True)
+                    for r_a in r_as:
+                        label = dict(
+                            mechanism=mech,
+                            b_share=b,
+                            lam=lam,
+                            omega=omega,
+                            turnover=turnover,
+                            r_A=r_a,
+                            theta=p.theta,
+                            sigma_p=p.sigma_p,
+                        )
+                        pc = e5_params(p, mech, b, lam=lam, omega=omega, turnover=turnover, r_A=r_a)
+                        add(cells, label, pc, with_path=True)
         for theta in cfg["theta_sensitivity"]["thetas"]:
             label = dict(
                 mechanism=mech,
@@ -701,6 +715,7 @@ def _e5_seed(cfg: dict[str, Any], seed: int) -> tuple[list[dict], list[dict], li
                 lam=0.2,
                 omega=0.3,
                 turnover=False,
+                r_A=0.0,
                 theta=theta,
                 sigma_p=p.sigma_p,
             )
@@ -721,7 +736,7 @@ def _e5_seed(cfg: dict[str, Any], seed: int) -> tuple[list[dict], list[dict], li
 def run_e5(cfg: dict[str, Any], seeds: int, out: Path, n_jobs: int = -1) -> dict[str, Path]:
     """Run E5; write cells, trajectories and comparison tables to ``out/E5``."""
     t0 = time.perf_counter()
-    res = Parallel(n_jobs=n_jobs)(delayed(_e5_seed)(cfg, s) for s in range(seeds))
+    res = map_seeds(_e5_seed, cfg, seeds, n_jobs)
     p: Params = cfg["base"]
     world = build_world(p, RNGStreams(0))
     xcheck = annual_crosscheck(p, 0, world)  # the λ = 0 SOFA cells are solved
@@ -743,6 +758,60 @@ def run_e5(cfg: dict[str, Any], seeds: int, out: Path, n_jobs: int = -1) -> dict
     return paths
 
 
+# --- E6: evolution of strategies (§7) --------------------------------------------------
+def e6_cells(cfg: dict[str, Any]) -> list[tuple[dict, dict]]:
+    """(label, overrides) for every E6 cell; peer reports only under T3."""
+    out = []
+    for regime in cfg["regimes"]:
+        for audit, overrides in cfg["audits"].items():
+            if "p_peer" in overrides and regime != "T3":
+                continue
+            for c_m in cfg["c_ms"]:
+                out.append(
+                    (
+                        {"regime": regime, "audit": audit, "c_m": c_m},
+                        {"regime": regime, "c_m": c_m, **overrides},
+                    )
+                )
+    return out
+
+
+def _e6_seed(cfg: dict[str, Any], seed: int) -> tuple[list[dict], list[dict], list[dict]]:
+    """All E6 cells for one seed: (summaries, trajectories, cartel survival records)."""
+    p: Params = cfg["base"]
+    world = build_world(p, RNGStreams(seed))
+    keep = list(cfg["trajectory_metrics"])
+    cells, paths, logs = [], [], []
+    for label, overrides in e6_cells(cfg):
+        res = SOFAModel(p.replace(**overrides), seed=seed, world=world).run()
+        cells.append({"seed": seed, **label, **res.summary()})
+        cols = ["year", *[k for k in keep if k in res.yearly]]
+        paths.extend({"seed": seed, **label, **r} for r in res.yearly[cols].to_dict("records"))
+        logs.extend({"seed": seed, **label, **r} for r in res.cartel_log)
+    return cells, paths, logs
+
+
+def run_e6(cfg: dict[str, Any], seeds: int, out: Path, n_jobs: int = -1) -> dict[str, Path]:
+    """Run E6; write cells, trajectories and cartel survival tables to ``out/E6``."""
+    t0 = time.perf_counter()
+    res = map_seeds(_e6_seed, cfg, seeds, n_jobs)
+    p: Params = cfg["base"]
+    meta = dict(
+        experiment="E6",
+        config_hash=p.config_hash(),
+        git_commit=git_commit(),
+        seeds=seeds,
+        N=p.N,
+        runtime_s=f"{time.perf_counter() - t0:.1f}",
+    )
+    paths = {}
+    for i, name in enumerate(("cells", "trajectories", "cartels")):
+        df = pd.DataFrame([r for parts in res for r in parts[i]])
+        paths[name] = out / "E6" / f"E6_{name}.parquet"
+        write_parquet(df, paths[name], meta)
+    return paths
+
+
 # --- Registry and CLI -------------------------------------------------------------------
 RUNNERS: dict[str, Callable[..., dict[str, Path]]] = {
     "E0": run_e0,
@@ -751,6 +820,7 @@ RUNNERS: dict[str, Callable[..., dict[str, Path]]] = {
     "E3": run_e3,
     "E4": run_e4,
     "E5": run_e5,
+    "E6": run_e6,
 }
 
 
