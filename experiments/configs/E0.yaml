@@ -1,0 +1,20 @@
+# E0 Verification (Milestone 1, §7): static W checks of every analytic result in §2.3.
+experiment: E0
+description: >
+  Static random sparse W (N = 400, d = 40 recipients per donor, Exp(1) weights).
+  Closed form vs iteration, conservation, degenerate cases, group balance, the exact
+  cartel identity, cartel premium over the E2 grid, rings, the cap bound and the oracle.
+base:
+  N: 400
+  alpha: 0.5
+d: 40
+seeds: 10
+alphas: [0.2, 0.35, 0.5, 0.65, 0.8, 0.9]
+ks: [2, 3, 5, 10, 20]
+phis: [0.25, 0.5, 0.75, 1.0]
+topologies: [clique, ring, star]
+caps: [0.05, 0.1, 0.2, 0.5]
+cap_alpha: 0.8
+cap_k: 5
+shortfall_Ns: [200, 400, 800]   # §10: shortfall shrinks with N at k = 5, α = 0.8
+theta: 0.5

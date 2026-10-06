@@ -1,0 +1,397 @@
+"""Experiment runners and command-line interface (§7, §9).
+
+Usage::
+
+    python -m sofa.experiments run E0 --seeds 10 --n 400 --out results/
+    python -m sofa.experiments plot E0 --out results/
+
+Milestone 1 implements E0 (verification against §2.3).
+"""
+
+from __future__ import annotations
+
+import argparse
+import subprocess
+import time
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
+from joblib import Parallel, delayed
+
+from sofa import metrics
+from sofa.config import Params, load_experiment_config
+from sofa.flows import (
+    cycle_return_shares,
+    flows_at_steady_state,
+    iterate_fixed_W,
+    steady_state,
+)
+from sofa.rng import RNGStreams
+from sofa.safeguards import cap_project
+from sofa.strategies import cartel_rows, choose_members, random_sparse_W
+
+CONFIG_DIR = Path(__file__).resolve().parents[2] / "experiments" / "configs"
+
+
+# --- Helpers ----------------------------------------------------------------------------
+def git_commit() -> str:
+    """Return the current git commit (short hash), or "unknown" outside a repository."""
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=Path(__file__).parent,
+        )
+        return out.stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return "unknown"
+
+
+def write_parquet(df: pd.DataFrame, path: Path, meta: dict[str, str]) -> None:
+    """Write a tidy frame to parquet with config hash, commit etc. in the file metadata."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    table = pa.Table.from_pandas(df, preserve_index=False)
+    existing = table.schema.metadata or {}
+    table = table.replace_schema_metadata(
+        {**existing, **{f"sofa.{k}".encode(): str(v).encode() for k, v in meta.items()}}
+    )
+    pq.write_table(table, path)
+
+
+def years_to_tolerance(errors: np.ndarray, tol: float) -> int:
+    """First year (1-based) from which the error stays below ``tol``."""
+    above = np.nonzero(errors >= tol)[0]
+    return 1 if above.size == 0 else int(above[-1]) + 2
+
+
+# --- E0: verification of §2.3 -----------------------------------------------------------
+def _e0_seed(cfg: dict[str, Any], seed: int) -> tuple[list[dict], list[dict]]:
+    """All E0 checks for one seed. Returns (check rows, premium rows)."""
+    p: Params = cfg["base"]
+    N, B, d = p.N, p.B, int(cfg["d"])
+    rngs = RNGStreams(seed)
+    W = random_sparse_W(N, d, rngs.get("verification", "W"))
+    checks: list[dict] = []
+
+    def check(name: str, section: str, analytic: float, simulated: float, tol: float, **kw):
+        err = abs(simulated - analytic)
+        checks.append(
+            dict(
+                seed=seed,
+                check=name,
+                section=section,
+                analytic=analytic,
+                simulated=simulated,
+                abs_error=err,
+                tolerance=tol,
+                passed=err <= tol,
+                **kw,
+            )
+        )
+
+    # §2.3.1 iteration vs closed form; years to reach 1e-6 (no pool) and with a heavy pool
+    for alpha in cfg["alphas"]:
+        R_star, _ = steady_state(W, alpha, B)
+        T = int(np.ceil(np.log(1e-14) / np.log(alpha))) + 5
+        states = iterate_fixed_W(W, alpha, B, T)
+        err = np.array([np.abs(s.R - R_star).max() for s in states])
+        check(
+            "iteration_vs_closed_form",
+            "2.3.1",
+            0.0,
+            float(err[-1]),
+            1e-10,
+            alpha=alpha,
+            years=T,
+            years_to_1e6=years_to_tolerance(err / B, 1e-6),
+            predicted_years_to_1e6=float(np.log(1e-6) / np.log(alpha)),
+        )
+        # pool lag (§2.2/§4.7): a cap below 1/d forces most donations through the pool
+        Wp = cap_project(W, 0.5 / d).W
+        Rp, _ = steady_state(Wp, alpha, B)
+        Tp = int(np.ceil(np.log(1e-14) / np.log(np.sqrt(alpha)))) + 5
+        sp = iterate_fixed_W(Wp, alpha, B, Tp)
+        errp = np.array([np.abs(s.R - Rp).max() for s in sp])
+        check(
+            "iteration_vs_closed_form_heavy_pool",
+            "2.3.1",
+            0.0,
+            float(errp[-1]),
+            1e-10,
+            alpha=alpha,
+            years=Tp,
+            years_to_1e6=years_to_tolerance(errp / B, 1e-6),
+            predicted_years_to_1e6=float(np.log(1e-6) / np.log(alpha)),
+            pool_share=float(sp[-1].pool / (alpha * sp[-1].R.sum())),
+        )
+
+    # §2.3.2 conservation
+    for alpha in (0.5, 0.9):
+        _, K = steady_state(W, alpha, B)
+        check("conservation", "2.3.2", N * B, float(K.sum()), 1e-10 * N, alpha=alpha)
+        _, Kp = steady_state(cap_project(W, 0.5 / d).W, alpha, B)
+        check("conservation_with_pool", "2.3.2", N * B, float(Kp.sum()), 1e-10 * N, alpha=alpha)
+
+    # §2.3.3 degenerate cases
+    _, K = steady_state(W, 0.0, B)
+    check("alpha_zero_equal_split", "2.3.3", B, float(np.abs(K - B).max() + B), 1e-10)
+    U = np.full((N, N), 1.0 / (N - 1))
+    np.fill_diagonal(U, 0.0)
+    _, K = steady_state(U, 0.8, B)
+    check("uniform_W_equal_split", "2.3.3", B, float(np.abs(K - B).max() + B), 1e-10)
+
+    # §2.3.4 group balance identity (worst over random subsets)
+    alpha = p.alpha
+    R, K = steady_state(W, alpha, B)
+    F = flows_at_steady_state(W, alpha, R)
+    gr = rngs.get("verification", "subsets")
+    worst = 0.0
+    for size in (1, 5, 20, 100, 200):
+        for _ in range(5):
+            C = gr.choice(N, size=size, replace=False)
+            inflow, outflow = metrics.group_flows(F, C)
+            worst = max(worst, abs(K[C].sum() - (size * B + inflow - outflow)))
+    check("group_balance_identity", "2.3.4", 0.0, worst, 1e-10 * N, alpha=alpha)
+
+    # §2.3.5–6 cartel premium over the E2 grid; exact form; ring mutual flow
+    premiums: list[dict] = []
+    cr = rngs.get("strategy", "cartels")
+    members_by_k = {k: choose_members(N, k, cr) for k in cfg["ks"]}
+    worst_exact = 0.0
+    for alpha in cfg["alphas"]:
+        R0, K0 = steady_state(W, alpha, B)  # CRN counterfactual: same W, no cartel
+        F0 = flows_at_steady_state(W, alpha, R0)
+        for k, C in members_by_k.items():
+            I_C0, _ = metrics.group_flows(F0, C)
+            for topology in cfg["topologies"]:
+                for phi in cfg["phis"]:
+                    Wc = cartel_rows(W, C, phi, topology)
+                    Rc, Kc = steady_state(Wc, alpha, B)
+                    Fc = flows_at_steady_state(Wc, alpha, Rc)
+                    I_C, _ = metrics.group_flows(Fc, C)
+                    exact = (1 - alpha) * (k * B + I_C) / (1 - alpha * phi)
+                    worst_exact = max(worst_exact, abs(Kc[C].sum() - exact))
+                    P = metrics.cartel_premium(Kc, K0, C)
+                    bound = metrics.premium_bound(alpha, phi)
+                    premiums.append(
+                        dict(
+                            seed=seed,
+                            N=N,
+                            alpha=alpha,
+                            k=k,
+                            phi=phi,
+                            topology=topology,
+                            premium=P,
+                            bound=bound,
+                            shortfall=1 - P / bound,
+                            mutual_flow_in_cartel=metrics.mutual_flow(Fc, C),
+                            reciprocity_in_cartel=metrics.reciprocity_index(Fc, C),
+                            cycle_return_mean=float(cycle_return_shares(Wc, alpha, p.L)[C].mean()),
+                            inflow_change=I_C / I_C0 - 1,
+                            outsider_K_change=float((Kc - K0).sum() - (Kc - K0)[C].sum()),
+                        )
+                    )
+    check("cartel_exact_form", "2.3.5", 0.0, worst_exact, 1e-10)
+    pdf = pd.DataFrame(premiums)
+    check(
+        "premium_never_exceeds_bound",
+        "2.3.5",
+        0.0,
+        float(max(0.0, (pdf.premium - pdf.bound).max())),
+        1e-9,
+    )
+    ring = pdf[(pdf.topology == "ring") & (pdf.phi == 1.0) & (pdf.k > 2)]
+    check("ring_zero_mutual_flow", "2.3.6", 0.0, float(ring.mutual_flow_in_cartel.max()), 0.0)
+    a5 = pdf[(pdf.alpha == 0.5) & (pdf.phi == 1.0) & (pdf.k == 5)].set_index("topology")
+    check(
+        "ring_vs_clique_premium",
+        "2.3.6",
+        float(a5.loc["clique", "premium"]),
+        float(a5.loc["ring", "premium"]),
+        0.05 * float(a5.loc["clique", "premium"]),
+    )
+
+    # §2.3.7 cap bound
+    ca, ck = float(cfg["cap_alpha"]), int(cfg["cap_k"])
+    C = members_by_k[ck] if ck in members_by_k else choose_members(N, ck, cr)
+    phi_max_of = {c: min(1.0, (ck - 1) * c) for c in cfg["caps"]}
+    for c in cfg["caps"]:
+        _, K0c = steady_state(cap_project(W, c).W, ca, B)
+        for topology in ("clique", "ring"):
+            for phi in (0.5, 1.0):
+                capped = cap_project(cartel_rows(W, C, phi, topology), c)
+                _, Kc = steady_state(capped.W, ca, B)
+                P = metrics.cartel_premium(Kc, K0c, C)
+                strict = metrics.premium_bound(ca, phi_max_of[c])
+                leaks = bool(capped.excess[C].max() > 1e-12)  # members' excess → pool
+                extra = dict(
+                    alpha=ca,
+                    k=ck,
+                    cap=c,
+                    phi=phi,
+                    topology=topology,
+                    member_pool_leak=float(capped.excess[C].mean()),
+                )
+                if leaks:
+                    # Excess routed to the pool: members recapture a share k/N of it, a
+                    # return channel §2.3.7 omits. Report the strict and amended bounds.
+                    amended = metrics.premium_bound_pool_recapture(ca, phi_max_of[c], ck, N)
+                    bounds = (
+                        ("cap_bounds_premium_pool_leak_strict", strict),
+                        ("cap_bounds_premium_pool_leak_amended", amended),
+                    )
+                else:
+                    bounds = (("cap_bounds_premium", strict),)
+                for name, bound in bounds:
+                    checks.append(
+                        dict(
+                            seed=seed,
+                            check=name,
+                            section="2.3.7",
+                            analytic=bound,
+                            simulated=P,
+                            abs_error=max(0.0, P - bound),
+                            tolerance=1e-9,
+                            passed=bound + 1e-9 >= P,
+                            **extra,
+                        )
+                    )
+
+    # §2.3.8 oracle optimality: random budget-preserving perturbations never raise Y
+    theta = float(cfg["theta"])
+    q = rngs.get("verification", "quality").lognormal(0.0, p.sigma_q, N)
+    q /= q.mean()
+    K1 = metrics.oracle_allocation(q, theta, B)
+    Y1 = metrics.expected_output(K1, q, theta, B)
+    pr = rngs.get("verification", "perturb")
+    gain = -np.inf
+    for _ in range(500):
+        z = pr.normal(size=N)
+        z -= z.mean()
+        Kp = K1 + pr.uniform(0.001, 0.5) * K1.min() / np.abs(z).max() * z
+        gain = max(gain, metrics.expected_output(Kp, q, theta, B) - Y1)
+    check(
+        "oracle_max_perturbation_gain", "2.3.8", 0.0, max(0.0, gain), 1e-12, worst_gain=float(gain)
+    )
+    check("efficiency_oracle_is_one", "6", 1.0, metrics.efficiency(K1, q, theta, B), 1e-12)
+    check(
+        "efficiency_equal_split_is_zero",
+        "6",
+        0.0,
+        metrics.efficiency(np.full(N, B), q, theta, B),
+        1e-12,
+    )
+    return checks, premiums
+
+
+def _e0_shortfall_vs_N(cfg: dict[str, Any], seed: int) -> list[dict]:
+    """§10: mean shortfall for k = 5, α = 0.8, φ = 1 at several N (clique)."""
+    rows = []
+    for N in cfg["shortfall_Ns"]:
+        rngs = RNGStreams(seed)
+        W = random_sparse_W(N, int(cfg["d"]), rngs.get("verification", "W", N))
+        C = choose_members(N, 5, rngs.get("strategy", "cartels", N))
+        _, K0 = steady_state(W, 0.8, 1.0)
+        _, K1 = steady_state(cartel_rows(W, C, 1.0, "clique"), 0.8, 1.0)
+        P = metrics.cartel_premium(K1, K0, C)
+        rows.append(
+            dict(
+                seed=seed,
+                N=N,
+                alpha=0.8,
+                k=5,
+                phi=1.0,
+                premium=P,
+                shortfall=1 - P / metrics.premium_bound(0.8, 1.0),
+            )
+        )
+    return rows
+
+
+def run_e0(cfg: dict[str, Any], seeds: int, out: Path, n_jobs: int = -1) -> dict[str, Path]:
+    """Run E0 over ``seeds`` seeds and write parquet tables to ``out/E0``."""
+    t0 = time.perf_counter()
+    res = Parallel(n_jobs=n_jobs)(delayed(_e0_seed)(cfg, s) for s in range(seeds))
+    sf = Parallel(n_jobs=n_jobs)(delayed(_e0_shortfall_vs_N)(cfg, s) for s in range(seeds))
+    checks = pd.DataFrame([r for c, _ in res for r in c])
+    prem = pd.DataFrame([r for _, pr in res for r in pr])
+    short = pd.DataFrame([r for rows in sf for r in rows])
+    meta = dict(
+        experiment="E0",
+        config_hash=cfg["base"].config_hash(),
+        git_commit=git_commit(),
+        seeds=seeds,
+        d=cfg["d"],
+        runtime_s=f"{time.perf_counter() - t0:.1f}",
+    )
+    paths = {
+        "checks": out / "E0" / "E0_checks.parquet",
+        "premium": out / "E0" / "E0_premium.parquet",
+        "shortfall_vs_N": out / "E0" / "E0_shortfall_vs_N.parquet",
+    }
+    write_parquet(checks, paths["checks"], meta)
+    write_parquet(prem, paths["premium"], meta)
+    write_parquet(short, paths["shortfall_vs_N"], meta)
+    return paths
+
+
+def summarise_e0(out: Path) -> pd.DataFrame:
+    """Analytic vs simulated table across seeds (worst case per check)."""
+    checks = pd.read_parquet(out / "E0" / "E0_checks.parquet")
+    g = checks.groupby(["section", "check"], sort=True)
+    return g.agg(
+        analytic=("analytic", "mean"),
+        simulated=("simulated", "mean"),
+        worst_abs_error=("abs_error", "max"),
+        tolerance=("tolerance", "max"),
+        n=("passed", "size"),
+        all_passed=("passed", "all"),
+    ).reset_index()
+
+
+# --- Registry and CLI -------------------------------------------------------------------
+RUNNERS: dict[str, Callable[..., dict[str, Path]]] = {"E0": run_e0}
+
+
+def main(argv: list[str] | None = None) -> None:
+    """Command-line entry point."""
+    ap = argparse.ArgumentParser(prog="python -m sofa.experiments")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    r = sub.add_parser("run", help="run an experiment")
+    r.add_argument("experiment", choices=sorted(RUNNERS))
+    r.add_argument("--seeds", type=int, default=None)
+    r.add_argument("--n", type=int, default=None, help="override N")
+    r.add_argument("--out", type=Path, default=Path("results"))
+    r.add_argument("--jobs", type=int, default=-1)
+    pl = sub.add_parser("plot", help="plot an experiment's results")
+    pl.add_argument("experiment", choices=sorted(RUNNERS))
+    pl.add_argument("--out", type=Path, default=Path("results"))
+    args = ap.parse_args(argv)
+
+    if args.cmd == "run":
+        cfg = load_experiment_config(CONFIG_DIR / f"{args.experiment}.yaml")
+        if args.n is not None:
+            cfg["base"] = cfg["base"].replace(N=args.n)
+        seeds = args.seeds or int(cfg.get("seeds", 10))
+        paths = RUNNERS[args.experiment](cfg, seeds, args.out, n_jobs=args.jobs)
+        for name, path in paths.items():
+            print(f"{name}: {path}")
+        if args.experiment == "E0":
+            with pd.option_context("display.width", 200, "display.max_columns", 20):
+                print(summarise_e0(args.out).to_string(index=False))
+    else:
+        from sofa import plotting
+
+        for path in plotting.PLOTTERS[args.experiment](args.out):
+            print(path)
+
+
+if __name__ == "__main__":
+    main()
