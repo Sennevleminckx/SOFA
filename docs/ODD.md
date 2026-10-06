@@ -1,8 +1,10 @@
-# SOFA-ABM — ODD protocol (version 4, Milestone 5)
+# SOFA-ABM — ODD protocol (version 5, Milestone 6: complete)
 
 Model description following the ODD protocol (Grimm et al. 2020). Section numbers in brackets refer
-to `CLAUDE.md`. Elements marked *(planned, Mn)* are specified but not yet implemented. The model
-refuses to run with those switched on (`NotImplementedError`), so no parameter is silently ignored.
+to `CLAUDE.md`. Every submodel of the specification is implemented except the optional S6 receipt
+ceiling (K_max). The model refuses to run with it, or with combinations whose rules the
+specification leaves open (turnover with cartels or with adaptation; adaptation or audits with a
+non-SOFA mechanism), raising `NotImplementedError`, so no parameter is silently ignored.
 
 ---
 
@@ -11,10 +13,10 @@ refuses to run with those switched on (`NotImplementedError`), so no parameter i
 **Purpose.** To explain how Self-Organised Funding Allocation (SOFA; Bollen et al. 2014, 2017)
 distributes research money when donors respond to incentives and information, and to compare it with
 conventional allocation mechanisms. The model is a *toy*: it favours analytic tractability and
-transparent mechanisms over realism. The research questions are RQ1–RQ6 [§1]. Version 2 addresses
-RQ1 (mechanics under sincere but noisy donors), RQ2 (cartels), RQ3 (transparency), RQ4 (safeguards),
-RQ5 (feedback and equity), RQ6 (comparison with equal split, oracle, panel review and lottery),
-and the behavioural side of RQ2–RQ4 (which strategies spread under imitation, and under which rules).
+transparent mechanisms over realism. The research questions are RQ1–RQ6 [§1]: RQ1 (mechanics under
+sincere but noisy donors), RQ2 (cartels), RQ3 (transparency), RQ4 (safeguards), RQ5 (feedback and
+equity), RQ6 (comparison with equal split, oracle, panel review and lottery), and the behavioural
+side of RQ2–RQ4 (which strategies spread under imitation, and under which rules).
 
 **Patterns used to evaluate the model.**
 1. With a fixed donation matrix W, the closed-form results of [§2.3] hold exactly: steady state, conservation,
@@ -29,12 +31,12 @@ and the behavioural side of RQ2–RQ4 (which strategies spread under imitation, 
 
 | Entity | State variables | Static? |
 |---|---|---|
-| **Researcher** i = 1…N | latent quality q_i (mean 1); field f_i; lab ℓ_i; career stage (early / mid / senior); supervisor (early-career only: a senior in the same lab); visibility v_i; strategy s_i ∈ {sincere, herder, reciprocator, cartel member, deferential}; cartel id; receipts R_i(t); kept amount K_i(t) | f, ℓ static; v updated by output feedback (λ); q, stage, career age change only with turnover |
+| **Researcher** i = 1…N | latent quality q_i (mean 1); field f_i; lab ℓ_i; career stage (early / mid / senior); supervisor (early-career only: a senior in the same lab); visibility v_i; strategy s_i ∈ {sincere, herder, reciprocator, cartel member, deferential, shirker, best-responder}; cartel id; receipts R_i(t); kept amount K_i(t) | f, ℓ static; v updated by output feedback (λ); q, stage, career age change only with turnover |
 | **Awareness network** | directed Boolean matrix A, A_ij = i is aware of j | static unless contact resampling (r_A) or turnover |
 | **Perception** | persistent taste ε_ij ~ N(0, 1) | static |
 | **Donation matrix** | W(t), W_ij = share of i's donation to j | rebuilt each year (cached when it cannot change) |
-| **Platform** | sees all flows F(t); transparency regime T0–T3; applies safeguards S1–S4; pool balance | — |
-| **Collectives** | fields (G = 5, unequal sizes), labs (about 6, nested in fields); cartels (n_C of size k, topology clique / ring / star) | static |
+| **Platform** | sees all flows F(t); transparency regime T0–T3; applies safeguards S1–S5; pool balance | — |
+| **Collectives** | fields (G = 5, unequal sizes), labs (about 6, nested in fields); cartels (n_C of size k, topology clique / ring / star) | fields and labs static; cartels change under adaptation (registry) |
 
 **Scales.** One step = one year. Horizon T = 60 years; outcomes are averaged over the last
 T_eval = 10. N = 500 by default (development 300). Money is scale-free (base B = 1).
@@ -175,20 +177,6 @@ and oracle cost nothing. Because Y_A1 − Y_A0 can be small (the oracle gains ab
 at the defaults), E magnifies differences, so output relative to equal split (Y_net/Y_A0 − 1) is
 reported as well.
 
-### 7.11 Production, feedback and turnover [§4.8]
-- Output and visibility as in step 6 (§3 above). λ = 0 switches the feedback off; the output draws come
-  from their own stream, so they never alter the allocation in that case.
-- **Turnover** (optional): every year each senior exits with probability 1/35; promotion after 5 and
-  12 years. A newcomer takes over the slot (lab, field) as early-career, with quality and visibility
-  drawn as at initialisation (early multiplier). They inherit the slot's contact list (the lab's
-  contacts). Others' awareness of the slot is thinned by (v_new/v_old)^τ, consistent with
-  P ∝ v^τ; the own lab always knows them; tastes are redrawn. Supervisors are reassigned (a senior in
-  the lab, else in the field). Combining turnover with cartels is refused, because the spec does not
-  say what happens to a departing member's cartel.
-- **Contact resampling** (r_A, optional): each agent drops a share r_A of its non-lab contacts and draws
-  as many new ones, without replacement and in proportion to (10 if same field else 1)·v_j^τ, at
-  current visibility. The out-degree is preserved.
-
 ### 7.8 Transparency regimes [§4.5]
 T0 sealed (own R_i only); T1 totals public (everyone's R_j(t − 1)); T2 donors revealed (T1 plus the
 identity and amount of own donors); T3 full ledger (F(t − 1)). Required regimes: herder T1, reciprocator
@@ -216,17 +204,32 @@ T2; sincere, cartel and deferential T0. The platform always sees everything.
 - **Steady state with S3/S4:** S3 is nonlinear in R, so the steady state is the exact fixed point of
   the annual map, iterated with same-year pool redistribution (same fixed point, faster convergence).
 
+### 7.11 Production, feedback and turnover [§4.8]
+- Output and visibility as in step 6 (§3 above). λ = 0 switches the feedback off; the output draws come
+  from their own stream, so they never alter the allocation in that case.
+- **Turnover** (optional): every year each senior exits with probability 1/35; promotion after 5 and
+  12 years. A newcomer takes over the slot (lab, field) as early-career, with quality and visibility
+  drawn as at initialisation (early multiplier). They inherit the slot's contact list (the lab's
+  contacts). Others' awareness of the slot is thinned by (v_new/v_old)^τ, consistent with
+  P ∝ v^τ; the own lab always knows them; tastes are redrawn. Supervisors are reassigned (a senior in
+  the lab, else in the field). Combining turnover with cartels is refused, because the spec does not
+  say what happens to a departing member's cartel.
+- **Contact resampling** (r_A, optional): each agent drops a share r_A of its non-lab contacts and draws
+  as many new ones, without replacement and in proportion to (10 if same field else 1)·v_j^τ, at
+  current visibility. The out-degree is preserved.
+
 ### 7.12 Behaviour change and audits [§4.9, §4.6 S5]
 Active only with `adaptation = True` (switch; default off), except S5 and peer reports, which
 need only p_audit > 0 or p_peer > 0. All draws come from the `adaptation` stream.
 - **Payoff:** π_i = K_i − c_m·B·[strategic] − sanctions_i. Strategic = herder, reciprocator or
   best-responder actually playing (after fallbacks), or a member of a routing cartel.
 - **S5 audit:** with probability p_audit a year, agents with cycle-return share r_i > r_thr lose a
-  share s of K. r uses the same weighting as S4 (`s4_weighted`); the α-weighted default misses
-  5-member cliques (r ≈ 0.17 < 0.2), so E6 uses the unweighted share.
+  share s of K. By default (`s5_weighted = False`, M5 review) r is the *unweighted* return
+  probability Σ_{l=2}^{L} (W^l)_ii: an audit asks whether routing is circular, and the α-weighted
+  share falls with α (at r_thr = 0.2 it misses 5-member cliques, r ≈ 0.17 at α = 0.5).
 - **Peer reports (T3 only):** each routing cartel is reported with probability p_peer; members are
   sanctioned like audited agents and the cartel is dissolved.
-- **Shirking (assumption):** each year a share r_imit of active members reconsider. A member shirks
+- **Shirking (accepted at the M5 review):** each year a share r_imit of active members reconsider. A member shirks
   (donates sincerely, still receiving) when c_m·B exceeds the own K it would lose,
   (1 − α)·αR_i·Σ_j (w_ij^cartel − w_ij^sincere)Γ_ij, with Γ the return multipliers of this year's W.
   Shirkers stay shirkers until detected: each year with p_det = 1 under T2/T3, p_low under T0/T1.
@@ -242,6 +245,29 @@ need only p_audit > 0 or p_peer > 0. All draws come from the `adaptation` stream
 - **Best-responder** (needs T3): gives to the eligible j with the largest Γ_ij (from last year's W),
   filling up to the cap (everything to one recipient when c = 1).
 
+## 8. Analysis (experiments; not part of the model description)
+
+| Experiment | Question | Cells | Evaluation |
+|---|---|---|---|
+| E0 | verification [§2.3] | static W | closed form vs annual iteration |
+| E1 | RQ1 mechanics | α × σ_p × ω, sincere | solved |
+| E2 | RQ2 cartel premium | α × k × φ × topology × selection | solved |
+| E3 | RQ3 transparency | regime × behaviour × share | solved or simulated |
+| E4 | RQ4 safeguards | S1–S4 and α, alone and combined, against cliques and rings | solved |
+| E5 | RQ5, RQ6 feedback, equity, comparators | λ × ω × turnover × r_A × mechanism | simulated (λ > 0) |
+| E6 | RQ2–RQ4 evolution | regime × audit × c_m, with null models | simulated |
+| E7 | global sensitivity | Latin hypercubes (three blocks), PRCC | solved or simulated |
+
+**E7 design.** Three Latin hypercubes (n = 1000 each at full scale), one per model configuration,
+so that switches forced on in every sample do not condition the others: *mechanics* (sincere SOFA
+with visibility feedback, one clique cartel for Π against the same seed without it, and a panel
+comparator), *safeguards* (static W: S1–S4 against one clique or ring, solved) and *evolution* (the E6
+model). Factors span the "Explore" ranges of §5 plus the M5-review additions (early-career
+visibility multiplier, θ, μ_s, c_m). Each sample runs with its own seed. Partial rank correlation
+coefficients (Marino et al. 2008) with Bonferroni-corrected significance and a dummy factor as the
+noise floor; scatter plots of each outcome against its strongest factors check monotonicity, which
+PRCC assumes. Sobol indices (optional in §7) were not computed.
+
 ---
 
 *Change log.* v1 (M2): population, network, perception, sincere strategy, S2 cap, A0–A2.
@@ -253,3 +279,5 @@ net efficiency and overhead.
 v3.1 (M4 review): headline A3/A4 with equal base b_share = 1 − α; output relative to equal split as
 the primary efficiency measure. v4 (M5): imitation, mutation, shirking and detection, S5 audits,
 peer reports, best-responders; cartel registry.
+v5 (M6): S5 audits on the unweighted return share by default (`s5_weighted`, M5 review); shirking
+rule accepted; analysis section with the E7 sensitivity design; complete.
