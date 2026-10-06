@@ -134,3 +134,44 @@ def who_pays(
     edges = np.quantile(qo, np.linspace(0, 1, n_bins + 1))
     bins = np.clip(np.searchsorted(edges, qo, side="right") - 1, 0, n_bins - 1)
     return np.array([dK[bins == b].mean() if np.any(bins == b) else np.nan for b in range(n_bins)])
+
+
+# --- Equity (§6) ------------------------------------------------------------------------
+def share_ratios(K: FloatArray, labels: np.ndarray, n_groups: int) -> FloatArray:
+    """Each group's share of K divided by its population share (1 = proportional; §6)."""
+    K = np.asarray(K, dtype=float)
+    k_share = np.bincount(labels, weights=K, minlength=n_groups) / K.sum()
+    pop_share = np.bincount(labels, minlength=n_groups) / labels.size
+    return np.divide(k_share, pop_share, out=np.full(n_groups, np.nan), where=pop_share > 0)
+
+
+# --- One-stop allocation summary --------------------------------------------------------
+def allocation_metrics(
+    K: FloatArray,
+    q: FloatArray,
+    stage: np.ndarray,
+    field: np.ndarray,
+    theta: float,
+    B: float,
+    n_fields: int,
+) -> dict[str, float]:
+    """All per-allocation metrics of §6 that need only K and the population.
+
+    Returns a flat dictionary: total K, Gini, top-10 % share, efficiency E, Spearman
+    ρ(K, q), early/mid/senior share ratios and per-field share ratios
+    (``field_<g>_ratio``, fields in order of size, largest first).
+    """
+    stage_r = share_ratios(K, stage, 3)
+    field_r = share_ratios(K, field, n_fields)
+    out = {
+        "total_K": float(np.sum(K)),
+        "gini": gini(K),
+        "top10_share": top_share(K, 0.10),
+        "efficiency": efficiency(K, q, theta, B),
+        "spearman_Kq": spearman(K, q) if np.ptp(K) > 0 else float("nan"),
+        "early_ratio": float(stage_r[0]),
+        "mid_ratio": float(stage_r[1]),
+        "senior_ratio": float(stage_r[2]),
+    }
+    out.update({f"field_{g}_ratio": float(r) for g, r in enumerate(field_r)})
+    return out

@@ -1,13 +1,11 @@
 """Donation strategies → donation rows (§4.4).
 
-Milestone 1 contains only what the static-W verification (E0) needs:
+* Milestone 1 (static-W verification, E0): :func:`random_sparse_W`, a stand-in for
+  sincere rows, and :func:`cartel_rows`, the cartel topologies (clique, ring, star).
+* Milestone 2: the sincere strategy (:func:`eligible_mask`, :func:`sincere_scores`,
+  :func:`sincere_rows`).
 
-* :func:`random_sparse_W`, a stand-in for sincere rows (random weights on a random
-  set of ``d`` recipients), and
-* :func:`cartel_rows`, the cartel topologies (clique, ring, star) of §4.4.
-
-The behavioural strategies (sincere, herder, reciprocator, deferential, best-responder)
-follow at Milestones 2, 3 and 5.
+Herders, reciprocators, deference and best-responders follow at Milestones 3 and 5.
 """
 
 from __future__ import annotations
@@ -18,8 +16,44 @@ import numpy as np
 
 FloatArray = np.ndarray
 IntArray = np.ndarray
+BoolArray = np.ndarray
 
 TOPOLOGIES = ("clique", "ring", "star")
+
+
+# --- Sincere donors (§4.4) ---------------------------------------------------------------
+def eligible_mask(A: BoolArray, same_lab: BoolArray | None = None) -> BoolArray:
+    """E_i = awareness set minus self, minus own lab when S1 is on (``same_lab`` given)."""
+    E = A.copy()
+    np.fill_diagonal(E, False)
+    if same_lab is not None:
+        E &= ~same_lab
+    return E
+
+
+def sincere_scores(qhat: FloatArray, same_field: BoolArray, mu: float) -> FloatArray:
+    """S_ij = q̂_ij · μ^[f_i = f_j] (homophily μ ≥ 1; §4.4)."""
+    return qhat if mu == 1.0 else np.where(same_field, mu * qhat, qhat)
+
+
+def sincere_rows(S: FloatArray, E: BoolArray, m: int, beta: float) -> FloatArray:
+    """Keep the top-m eligible recipients by S_ij and set w_ij ∝ S_ij^β (§4.4).
+
+    Rows with fewer than m eligible recipients use all of them; rows with none are zero
+    (their donations go to the pool). Scores must be positive on eligible entries.
+    """
+    N = S.shape[0]
+    Se = np.where(E, S, 0.0)
+    if m < N - 1:
+        top = np.argpartition(-Se, m - 1, axis=1)[:, :m]
+        keep = np.zeros_like(E)
+        np.put_along_axis(keep, top, True, axis=1)
+        keep &= E
+    else:
+        keep = E
+    W = np.where(keep, Se**beta if beta != 1.0 else Se, 0.0)
+    tot = W.sum(axis=1, keepdims=True)
+    return np.divide(W, tot, out=np.zeros_like(W), where=tot > 0)
 
 
 def random_sparse_W(N: int, d: int, rng: np.random.Generator) -> FloatArray:
