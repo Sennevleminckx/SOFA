@@ -1,4 +1,4 @@
-# SOFA-ABM — ODD protocol (version 3, Milestone 4)
+# SOFA-ABM — ODD protocol (version 4, Milestone 5)
 
 Model description following the ODD protocol (Grimm et al. 2020). Section numbers in brackets refer
 to `CLAUDE.md`. Elements marked *(planned, Mn)* are specified but not yet implemented. The model
@@ -13,7 +13,8 @@ distributes research money when donors respond to incentives and information, an
 conventional allocation mechanisms. The model is a *toy*: it favours analytic tractability and
 transparent mechanisms over realism. The research questions are RQ1–RQ6 [§1]. Version 2 addresses
 RQ1 (mechanics under sincere but noisy donors), RQ2 (cartels), RQ3 (transparency), RQ4 (safeguards),
-RQ5 (feedback and equity) and RQ6 (comparison with equal split, oracle, panel review and lottery).
+RQ5 (feedback and equity), RQ6 (comparison with equal split, oracle, panel review and lottery),
+and the behavioural side of RQ2–RQ4 (which strategies spread under imitation, and under which rules).
 
 **Patterns used to evaluate the model.**
 1. With a fixed donation matrix W, the closed-form results of [§2.3] hold exactly: steady state, conservation,
@@ -51,7 +52,9 @@ Each year t, in this order [§3]:
 6. **Production and visibility:** expected output ȳ_i = q_i (K_i/B)^θ (1 − cost_i), realised output
    y_i = ȳ_i·LogNormal(−σ_y²/2, σ_y), then v_i ← (1 − λ) v_i + λ y_i/mean(y). Metrics are recorded here, so
    that K and quality refer to the same researchers.
-7. **Turnover and contact resampling** (each optional). Audits and adaptation *(planned, M5)*.
+7. **Audits and behaviour change** (each optional), then **turnover and contact resampling**:
+   S5 audit and peer reports (sanctions → pool); shirking decisions; detection of shirkers;
+   imitation; mutation.
 
 **Allocation mechanisms.** With `mechanism ≠ "sofa"`, steps 1–5 are replaced by a comparator allocation
 (A0 equal split, A1 oracle, A3 panel review, A4 lottery), and steps 6–7 are identical. Every mechanism
@@ -74,12 +77,13 @@ always simulated.
 - **Emergence.** The distribution of K (concentration, rank order, equity across groups) emerges from
   individual donation rows propagated through the network. With fixed W it is analytically known; it
   becomes genuinely emergent only when W responds to the state (M3 onwards).
-- **Adaptation.** Herders tilt their ranking towards last year's high receivers. Reciprocators return
-  part of their donation to last year's donors. Both respond to the previous year's state. Strategies
-  themselves are fixed; imitation and shirking follow at M5.
-- **Objectives.** Sincere donors have none beyond their perceived-quality ranking. Cartel members
-  follow a fixed collusive routing; no agent optimises explicitly before M5 (best-responders).
-- **Learning, prediction.** None. Reputation evolves through the output feedback (λ), which changes
+- **Adaptation.** Herders tilt their ranking towards last year's high receivers; reciprocators return
+  part of their donation to last year's donors; best-responders give to whoever returns most per
+  unit (Γ). With `adaptation` on, strategies themselves change: agents imitate better-paid
+  contacts (Fermi rule) and mutate at rate μ_s. Cartel members may shirk.
+- **Objectives.** Payoff π_i = K_i − c_m·B·[strategic] − sanctions_i drives imitation. Best-responders
+  maximise their own returns; shirkers compare the moral cost saved with the return lost.
+- **Learning, prediction.** Social learning by imitation (no prediction). Reputation evolves through the output feedback (λ), which changes
   perceived quality (when ω > 0), panel scores (when ω_p > 0) and, with resampling, awareness.
 - **Sensing.** Agents perceive others' quality with persistent noise and reputation bias (§7.2 below),
   and can donate only to researchers they are aware of (cartel members also know each other). What
@@ -89,8 +93,9 @@ always simulated.
   contacts and tastes are random. Each is drawn from its own named sub-stream of a master seed
   (`numpy.random.SeedSequence` with name-derived spawn keys). Changing one mechanism therefore never
   shifts another's draws: common random numbers across scenarios.
-- **Collectives.** Fields and labs are fixed and exogenous. Cartels are exogenous at M3: members are
-  chosen by `cartel_selection` and route a fixed share φ internally.
+- **Collectives.** Fields and labs are fixed and exogenous. Cartels start exogenous (`cartel_selection`)
+  and, with adaptation, grow by imitation (up to k_max), shrink when members leave or are expelled,
+  are founded by mutants or by imitators of full cartels, and dissolve when empty or reported.
 - **Observation.** Per year: total K, pool, Gini(K), top-10 % share, allocative efficiency E,
   Spearman ρ(K, q), share ratios by career stage and field, reciprocity index, mean number of
   recipients, year-on-year rank stability, strategy fallbacks, cartel share of K, and (evaluation years)
@@ -211,6 +216,32 @@ T2; sincere, cartel and deferential T0. The platform always sees everything.
 - **Steady state with S3/S4:** S3 is nonlinear in R, so the steady state is the exact fixed point of
   the annual map, iterated with same-year pool redistribution (same fixed point, faster convergence).
 
+### 7.12 Behaviour change and audits [§4.9, §4.6 S5]
+Active only with `adaptation = True` (switch; default off), except S5 and peer reports, which
+need only p_audit > 0 or p_peer > 0. All draws come from the `adaptation` stream.
+- **Payoff:** π_i = K_i − c_m·B·[strategic] − sanctions_i. Strategic = herder, reciprocator or
+  best-responder actually playing (after fallbacks), or a member of a routing cartel.
+- **S5 audit:** with probability p_audit a year, agents with cycle-return share r_i > r_thr lose a
+  share s of K. r uses the same weighting as S4 (`s4_weighted`); the α-weighted default misses
+  5-member cliques (r ≈ 0.17 < 0.2), so E6 uses the unweighted share.
+- **Peer reports (T3 only):** each routing cartel is reported with probability p_peer; members are
+  sanctioned like audited agents and the cartel is dissolved.
+- **Shirking (assumption):** each year a share r_imit of active members reconsider. A member shirks
+  (donates sincerely, still receiving) when c_m·B exceeds the own K it would lose,
+  (1 − α)·αR_i·Σ_j (w_ij^cartel − w_ij^sincere)Γ_ij, with Γ the return multipliers of this year's W.
+  Shirkers stay shirkers until detected: each year with p_det = 1 under T2/T3, p_low under T0/T1.
+  Detected shirkers are expelled (partners stop donating to them) and become sincere.
+- **Imitation:** each agent with probability r_imit compares with one random contact j and adopts j's
+  *visible* strategy with probability 1/(1 + exp(−(π_j − π_i)/(κ_F·mean K))). Shirking is secret,
+  so any cartel member looks like a member: imitating one means joining that cartel (or founding
+  a new one if it is full, k_max). Payoffs of contacts are assumed observable in every regime.
+- **Mutation:** with probability μ_s an agent adopts a random strategy from `evo_strategies`; a
+  mutant cartel member joins a random open cartel or founds one.
+- **Founders:** a cartel of one has nobody to route to, so it donates sincerely and pays no moral cost
+  until someone joins.
+- **Best-responder** (needs T3): gives to the eligible j with the largest Γ_ij (from last year's W),
+  filling up to the cap (everything to one recipient when c = 1).
+
 ---
 
 *Change log.* v1 (M2): population, network, perception, sincere strategy, S2 cap, A0–A2.
@@ -219,3 +250,6 @@ v2 (M3): roles, transparency regimes, herders, reciprocators, cartels, deference
 solved-versus-simulated rule. v2.1 (M3 review): unweighted S4 switch (`s4_weighted`).
 v3 (M4): production, visibility feedback, turnover, contact resampling; A3 and A4 in the yearly loop;
 net efficiency and overhead.
+v3.1 (M4 review): headline A3/A4 with equal base b_share = 1 − α; output relative to equal split as
+the primary efficiency measure. v4 (M5): imitation, mutation, shirking and detection, S5 audits,
+peer reports, best-responders; cartel registry.

@@ -7,9 +7,8 @@ respond to incentives and information (cartels, herding, reciprocity, transparen
 
 The full specification is in [`CLAUDE.md`](CLAUDE.md). Checkpoint reports are in [`reports/`](reports/).
 
-**Status:** Milestone 4 complete (production, visibility feedback, turnover, contact resampling;
-panel review and lottery comparators; experiment E5), awaiting review. See `reports/M1.md` …
-`reports/M4.md`.
+**Status:** Milestone 5 complete (imitation, mutation, shirking and detection, S5 audits, peer
+reports, best-responders; experiment E6), awaiting review. See `reports/M1.md` … `reports/M5.md`.
 
 ## Installation
 
@@ -29,8 +28,8 @@ python -m sofa.experiments plot E0 --out results/
 python -m sofa.experiments run E1 --seeds 10 --n 300 --out results/dev   # development scale
 python -m sofa.experiments run E1 --seeds 50 --n 500 --out results/full  # full scale
 python -m sofa.experiments plot E1 --out results/full
-for E in E2 E3 E4 E5; do python -m sofa.experiments run $E --seeds 50 --n 500 --out results/full; done
-for E in E2 E3 E4 E5; do python -m sofa.experiments plot $E --out results/full; done
+for E in E2 E3 E4 E5 E6; do python -m sofa.experiments run $E --seeds 50 --n 500 --out results/full; done
+for E in E2 E3 E4 E5 E6; do python -m sofa.experiments plot $E --out results/full; done
 ```
 
 Cells in which the donation matrix cannot change between years are solved directly rather than
@@ -49,9 +48,16 @@ res.summary()  # means over the last T_eval years
 m = SOFAModel(Params(cartels=True, topology="ring", delta_L=1.0, L=5), seed=1)
 R, K, W = m.equilibrium()
 
-# panel review under reputation feedback and turnover, same loop as SOFA
-SOFAModel(Params(mechanism="panel", b_share=0.5, lam=0.2, turnover=True), seed=1).run()
+# panel review (equal base 1 − α by default) under reputation feedback and turnover
+SOFAModel(Params(mechanism="panel", lam=0.2, turnover=True), seed=1).run()
+
+# strategies evolving by imitation under full transparency, with platform audits
+SOFAModel(Params(adaptation=True, cartels=True, x_C=0.05, x_herd=0.05, regime="T3",
+                 p_audit=0.5, s4_weighted=False, T=100, T_eval=20), seed=1).run()
 ```
+
+Experiment seeds run in parallel (joblib) with one BLAS thread per worker; without that limit
+the workers oversubscribe the cores and dense solves slow down by two orders of magnitude.
 
 Results are written as parquet (with config hash and git commit in the file metadata) to
 `results/<experiment>/`, figures to `results/<experiment>/figures/` (PNG and PDF).
@@ -61,8 +67,8 @@ Results are written as parquet (with config hash and git commit in the file meta
 ```
 src/sofa/      config, rng, flows, population (incl. strategy roles), network, perception,
                information (regimes), strategies, safeguards (S1–S4), production (output,
-               feedback, turnover), baselines (A0–A4), metrics, model, experiments (CLI),
-               plotting
+               feedback, turnover), adaptation (imitation, shirking, audits S5, best
+               responses), baselines (A0–A4), metrics, model, experiments (CLI), plotting
 docs/ODD.md    ODD protocol
 experiments/   YAML configurations per experiment
 tests/         analytic (§2.3) and mechanical tests
