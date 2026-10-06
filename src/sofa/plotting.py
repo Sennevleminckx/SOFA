@@ -183,4 +183,225 @@ def plot_e0(results: Path) -> list[Path]:
     return e0_premium_vs_bound(prem, figs) + e0_shortfall(prem, short_n, figs)
 
 
-PLOTTERS: dict[str, Callable[[Path], list[Path]]] = {"E0": plot_e0}
+# --- E1 ---------------------------------------------------------------------------------
+BLUE_RAMP6 = ("#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b")
+SEQ_BLUE = mpl.colors.LinearSegmentedColormap.from_list(
+    "seq_blue", ["#f4f8fd", "#b7d3f6", "#5598e7", "#256abf", "#0d366b"]
+)
+DIV_RED_BLUE = mpl.colors.LinearSegmentedColormap.from_list(
+    "div_red_blue", ["#8f2524", "#e34948", "#f0efec", "#3987e5", "#0d366b"]
+)
+
+
+def _cell_means(a2: pd.DataFrame, value: str) -> pd.DataFrame:
+    return a2.groupby(["omega", "sigma_p", "alpha"])[value].mean().reset_index()
+
+
+def e1_surfaces(df: pd.DataFrame, out: Path) -> list[Path]:
+    """Gini and efficiency over α × σ_p, one column per ω (§7 E1, M2 checkpoint)."""
+    a2 = df[df.mechanism == "A2"]
+    omegas = sorted(a2.omega.unique())
+    alphas = sorted(a2.alpha.unique())
+    sigmas = sorted(a2.sigma_p.unique())
+    g = _cell_means(a2, "gini")
+    e = _cell_means(a2, "efficiency")
+    gini_oracle = df[df.mechanism == "A1"].gini.mean()
+    e_lo = min(-0.05, e.efficiency.min())
+    norm_e = mpl.colors.TwoSlopeNorm(vmin=e_lo, vcenter=0.0, vmax=1.0)
+    norm_g = mpl.colors.Normalize(0.0, max(g.gini.max(), gini_oracle))
+    with mpl.rc_context({**STYLE, "axes.grid": False}):
+        fig, axes = plt.subplots(
+            2,
+            len(omegas),
+            figsize=(2.05 * len(omegas) + 1.4, 5.4),
+            sharex=True,
+            sharey=True,
+            constrained_layout=True,
+        )
+        for c, om in enumerate(omegas):
+            for r, (data, col, cmap, norm) in enumerate(
+                ((g, "gini", SEQ_BLUE, norm_g), (e, "efficiency", DIV_RED_BLUE, norm_e))
+            ):
+                ax = axes[r, c]
+                M = (
+                    data[data.omega == om]
+                    .pivot(index="sigma_p", columns="alpha", values=col)
+                    .reindex(index=sigmas, columns=alphas)
+                    .to_numpy()
+                )
+                ax.imshow(
+                    M,
+                    origin="lower",
+                    aspect="auto",
+                    cmap=cmap,
+                    norm=norm,
+                    extent=(-0.5, len(alphas) - 0.5, -0.5, len(sigmas) - 0.5),
+                )
+                if col == "efficiency":  # mark the efficiency-maximising α in each row
+                    best = np.nanargmax(M, axis=1)
+                    ax.plot(
+                        best,
+                        np.arange(len(sigmas)),
+                        ls="none",
+                        marker="o",
+                        ms=4,
+                        mfc="white",
+                        mec=INK,
+                        mew=0.8,
+                    )
+                    ax.contour(
+                        np.arange(len(alphas)),
+                        np.arange(len(sigmas)),
+                        M,
+                        levels=[0],
+                        colors=INK,
+                        linewidths=0.9,
+                        linestyles="--",
+                    )
+                ax.set_xticks(
+                    range(len(alphas)),
+                    [f"{a:g}" if i % 2 == 0 else "" for i, a in enumerate(alphas)],
+                )
+                ax.set_yticks(range(len(sigmas)), [f"{s_:g}" for s_ in sigmas])
+                if r == 0:
+                    ax.set_title(f"ω = {om:g}", loc="left")
+                if r == 1:
+                    ax.set_xlabel("Pass-on fraction α")
+                if c == 0:
+                    ax.set_ylabel("Perception noise σ_p (log-sd)")
+        for r, (cmap, norm, label) in enumerate(
+            (
+                (SEQ_BLUE, norm_g, "Gini(K)"),
+                (DIV_RED_BLUE, norm_e, "Efficiency E\n(0 = equal split, 1 = oracle)"),
+            )
+        ):
+            sm = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
+            fig.colorbar(sm, ax=axes[r, :], shrink=0.9, pad=0.01).set_label(label)
+        fig.suptitle(
+            "Sincere SOFA: concentration (top) and allocative efficiency (bottom); "
+            f"N = {int(df.attrs.get('N', 0)) or ''}, mean over {df.seed.nunique()} seeds. "
+            "White dots: E-maximising α per row; dashed: E = 0.",
+            x=0.01,
+            ha="left",
+            fontsize=9,
+        )
+        return _save(fig, out, "E1_surfaces")
+
+
+def e1_lines(df: pd.DataFrame, out: Path, omega: float = 0.3) -> list[Path]:
+    """Gini, E and ρ(K, q) against α, one line per σ_p, at ω = ``omega``; A0/A1 references."""
+    a2 = df[(df.mechanism == "A2") & np.isclose(df.omega, omega)]
+    a1 = df[df.mechanism == "A1"]
+    sigmas = sorted(a2.sigma_p.unique())
+    panels = (
+        ("gini", "Gini(K)", a1.gini.mean(), 0.0),
+        ("efficiency", "Efficiency E", 1.0, 0.0),
+        ("spearman_Kq", "Spearman ρ(K, q)", 1.0, None),
+    )
+    with mpl.rc_context(STYLE):
+        fig, axes = plt.subplots(1, 3, figsize=(11, 3.7))
+        for ax, (col, label, ref1, ref0) in zip(axes, panels, strict=True):
+            ax.axhline(ref1, color=INK, lw=1.0, ls="--")
+            ax.annotate(
+                "A1 oracle",
+                (0.1, ref1),
+                xytext=(0, 3),
+                textcoords="offset points",
+                fontsize=7.5,
+                color=INK,
+            )
+            if ref0 is not None:
+                ax.axhline(ref0, color=MUTED, lw=1.0, ls=":")
+                ax.annotate(
+                    "A0 equal split",
+                    (0.1, ref0),
+                    xytext=(0, 3),
+                    textcoords="offset points",
+                    fontsize=7.5,
+                    color=MUTED,
+                )
+            for colour, sp in zip(BLUE_RAMP6, sigmas, strict=False):
+                stats = a2[np.isclose(a2.sigma_p, sp)].groupby("alpha")[col].apply(_ci95)
+                al = stats.index.to_numpy()
+                m, lo, hi = (np.array([s_[i] for s_ in stats]) for i in range(3))
+                ax.fill_between(al, lo, hi, color=colour, alpha=0.2, lw=0)
+                ax.plot(al, m, color=colour, marker="o", ms=3.5, label=f"σ_p = {sp:g}")
+            ax.set(xlabel="Pass-on fraction α", ylabel=label)
+        h, lab = axes[0].get_legend_handles_labels()
+        fig.legend(
+            h,
+            lab,
+            loc="center left",
+            bbox_to_anchor=(1.0, 0.5),
+            fontsize=7.5,
+            title="Perception\nnoise",
+            title_fontsize=7.5,
+        )
+        fig.suptitle(
+            f"Sincere SOFA against α (ω = {omega:g}); mean and 95 % interval over "
+            f"{df.seed.nunique()} seeds",
+            x=0.01,
+            ha="left",
+            fontsize=10,
+        )
+        fig.tight_layout()
+        return _save(fig, out, "E1_lines")
+
+
+def e1_equity(df: pd.DataFrame, out: Path, sigma_p: float = 0.5) -> list[Path]:
+    """Career-stage share of K relative to population share, against α, by ω (§6)."""
+    a2 = df[(df.mechanism == "A2") & np.isclose(df.sigma_p, sigma_p)]
+    omegas = sorted(a2.omega.unique())
+    with mpl.rc_context(STYLE):
+        fig, axes = plt.subplots(1, 3, figsize=(11, 3.5), sharey=True)
+        for ax, (col, name) in zip(
+            axes,
+            (
+                ("early_ratio", "Early career"),
+                ("mid_ratio", "Mid career"),
+                ("senior_ratio", "Senior"),
+            ),
+            strict=True,
+        ):
+            ax.axhline(1.0, color=INK, lw=1.0, ls="--")
+            for colour, om in zip(BLUE_RAMP6, omegas, strict=False):
+                stats = a2[np.isclose(a2.omega, om)].groupby("alpha")[col].apply(_ci95)
+                al = stats.index.to_numpy()
+                m, lo, hi = (np.array([s_[i] for s_ in stats]) for i in range(3))
+                ax.fill_between(al, lo, hi, color=colour, alpha=0.2, lw=0)
+                ax.plot(al, m, color=colour, marker="o", ms=3.5, label=f"ω = {om:g}")
+            ax.set(title=name, xlabel="Pass-on fraction α")
+        axes[0].set_ylabel("Share of K ÷ population share")
+        h, lab = axes[0].get_legend_handles_labels()
+        fig.legend(
+            h,
+            lab,
+            loc="center left",
+            bbox_to_anchor=(1.0, 0.5),
+            fontsize=7.5,
+            title="Reputation\nweight",
+            title_fontsize=7.5,
+        )
+        fig.suptitle(
+            f"Equity by career stage (σ_p = {sigma_p:g}; 1 = proportional; no feedback, λ = 0)",
+            x=0.01,
+            ha="left",
+            fontsize=10,
+        )
+        fig.tight_layout()
+        return _save(fig, out, "E1_equity")
+
+
+def plot_e1(results: Path) -> list[Path]:
+    """All E1 figures from ``results/E1``."""
+    import pyarrow.parquet as pq
+
+    path = results / "E1" / "E1_cells.parquet"
+    df = pd.read_parquet(path)
+    meta = pq.read_schema(path).metadata or {}
+    df.attrs["N"] = int(meta.get(b"sofa.N", b"0"))
+    figs = results / "E1" / "figures"
+    return e1_surfaces(df, figs) + e1_lines(df, figs) + e1_equity(df, figs)
+
+
+PLOTTERS: dict[str, Callable[[Path], list[Path]]] = {"E0": plot_e0, "E1": plot_e1}

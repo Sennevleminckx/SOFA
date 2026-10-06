@@ -5,7 +5,8 @@ Usage::
     python -m sofa.experiments run E0 --seeds 10 --n 400 --out results/
     python -m sofa.experiments plot E0 --out results/
 
-Milestone 1 implements E0 (verification against §2.3).
+Implemented: E0 (verification against §2.3, Milestone 1) and E1 (sincere mechanics,
+Milestone 2).
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from joblib import Parallel, delayed
 
-from sofa import metrics
+from sofa import baselines, metrics
 from sofa.config import Params, load_experiment_config
 from sofa.flows import (
     cycle_return_shares,
@@ -31,6 +32,7 @@ from sofa.flows import (
     iterate_fixed_W,
     steady_state,
 )
+from sofa.model import SOFAModel, build_world
 from sofa.rng import RNGStreams
 from sofa.safeguards import cap_project
 from sofa.strategies import cartel_rows, choose_members, random_sparse_W
@@ -356,8 +358,60 @@ def summarise_e0(out: Path) -> pd.DataFrame:
     ).reset_index()
 
 
+# --- E1: sincere mechanics (§7) ---------------------------------------------------------
+def _e1_seed(cfg: dict[str, Any], seed: int) -> list[dict]:
+    """All E1 cells for one seed, sharing one world (CRN across the grid).
+
+    W depends on (σ_p, ω) but not on α (no safeguards), so it is built once per
+    (σ_p, ω) and the closed-form steady state is solved for each α.
+    """
+    p: Params = cfg["base"]
+    rngs = RNGStreams(seed)
+    world = build_world(p, rngs)
+    pop = world.pop
+
+    def row(mechanism: str, K: np.ndarray, **cell: float) -> dict:
+        out = {"seed": seed, "mechanism": mechanism, **cell}
+        out.update(metrics.allocation_metrics(K, pop.q, pop.stage, pop.field, p.theta, p.B, p.G))
+        return out
+
+    rows = [
+        row("A0", baselines.a0_equal_split(pop, p)),
+        row("A1", baselines.a1_oracle(pop, p)),
+    ]
+    for sigma_p in cfg["sigma_ps"]:
+        for omega in cfg["omegas"]:
+            pc = baselines.a2_params(p.replace(sigma_p=sigma_p, omega=omega))
+            W = SOFAModel(pc, seed=seed, world=world).donation_matrix(1)
+            for alpha in cfg["alphas"]:
+                R, K = steady_state(W, alpha, p.B)
+                r = row("A2", K, alpha=alpha, sigma_p=sigma_p, omega=omega)
+                r["reciprocity"] = metrics.reciprocity_index(flows_at_steady_state(W, alpha, R))
+                rows.append(r)
+    return rows
+
+
+def run_e1(cfg: dict[str, Any], seeds: int, out: Path, n_jobs: int = -1) -> dict[str, Path]:
+    """Run E1 over ``seeds`` seeds; write one tidy table to ``out/E1``."""
+    t0 = time.perf_counter()
+    res = Parallel(n_jobs=n_jobs)(delayed(_e1_seed)(cfg, s) for s in range(seeds))
+    df = pd.DataFrame([r for rows in res for r in rows])
+    p: Params = cfg["base"]
+    meta = dict(
+        experiment="E1",
+        config_hash=p.config_hash(),
+        git_commit=git_commit(),
+        seeds=seeds,
+        N=p.N,
+        runtime_s=f"{time.perf_counter() - t0:.1f}",
+    )
+    path = out / "E1" / "E1_cells.parquet"
+    write_parquet(df, path, meta)
+    return {"cells": path}
+
+
 # --- Registry and CLI -------------------------------------------------------------------
-RUNNERS: dict[str, Callable[..., dict[str, Path]]] = {"E0": run_e0}
+RUNNERS: dict[str, Callable[..., dict[str, Path]]] = {"E0": run_e0, "E1": run_e1}
 
 
 def main(argv: list[str] | None = None) -> None:

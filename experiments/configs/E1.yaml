@@ -1,0 +1,17 @@
+# E1 Mechanics, sincere donors only (Milestone 2, §7).
+# α × σ_p × ω grid → Gini, efficiency E, Spearman ρ(K, q), equity ratios; A0–A2 for reference.
+#
+# All agents are sincere, visibility is static (λ = 0) and there is no yearly perception
+# noise, so W does not change over time. The closed-form steady state therefore replaces
+# simulation (§2.3: never simulate fixed-W mechanics where the closed form suffices).
+# tests/test_model.py::test_annual_converges_to_equilibrium shows that the annual
+# iteration converges to the same K.
+experiment: E1
+description: Sincere SOFA mechanics over pass-on fraction, perception noise and reputation weight.
+base:
+  N: 500
+  flow_mode: equilibrium
+seeds: 50
+alphas: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+sigma_ps: [0.0, 0.25, 0.5, 0.75, 1.0, 1.5]
+omegas: [0.0, 0.15, 0.3, 0.5, 0.75, 1.0]
