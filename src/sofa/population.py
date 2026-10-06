@@ -21,8 +21,9 @@ IntArray = np.ndarray
 EARLY, MID, SENIOR = 0, 1, 2
 STAGE_NAMES = ("early", "mid", "senior")
 
-SINCERE = 0
-STRATEGY_NAMES = ("sincere",)  # extended at Milestones 3 and 5
+# Strategy codes (§4.4). Best-responders follow at Milestone 5.
+SINCERE, HERDER, RECIPROCATOR, CARTEL, DEFERENTIAL = 0, 1, 2, 3, 4
+STRATEGY_NAMES = ("sincere", "herder", "reciprocator", "cartel", "deferential")
 
 
 @dataclass(frozen=True)
@@ -35,7 +36,6 @@ class Population:
     stage: IntArray  # EARLY, MID or SENIOR
     supervisor: IntArray  # index of a senior in the same lab for early-career; −1 otherwise
     v0: FloatArray  # initial visibility, mean 1
-    strategy: IntArray  # strategy code (all SINCERE at Milestone 2)
 
     @property
     def N(self) -> int:
@@ -150,7 +150,89 @@ def build_population(p: Params, rngs: RNGStreams) -> Population:
     stage = assign_stages(lab, p.stage_shares, rngs.get("population", "stage"))
     supervisor = assign_supervisors(lab, field, stage, rngs.get("population", "supervisor"))
     v0 = draw_visibility(q, stage, p, rngs.get("population", "visibility"))
-    strategy = np.full(N, SINCERE, dtype=int)  # §4.4: own stream from Milestone 3
-    return Population(
-        q=q, field=field, lab=lab, stage=stage, supervisor=supervisor, v0=v0, strategy=strategy
-    )
+    return Population(q=q, field=field, lab=lab, stage=stage, supervisor=supervisor, v0=v0)
+
+
+# --- Strategy roles (§4.1, §4.4) --------------------------------------------------------
+@dataclass(frozen=True)
+class Roles:
+    """Strategy of each agent and cartel membership. Drawn from the ``strategy`` stream."""
+
+    strategy: IntArray  # strategy code per agent
+    cartel_id: IntArray  # index into ``cartels``; −1 for non-members
+    cartels: tuple[IntArray, ...]  # members in routing order (ring order; star hub first)
+
+    @property
+    def in_cartel(self) -> np.ndarray:
+        """Boolean mask of cartel members."""
+        return self.cartel_id >= 0
+
+    def same_cartel(self) -> np.ndarray:
+        """Boolean N×N matrix: True where i and j are members of the same cartel."""
+        c = self.cartel_id
+        return (c[:, None] == c[None, :]) & (c[:, None] >= 0)
+
+
+def n_cartels(p: Params) -> int:
+    """Return the number of cartels: n_C, or round(x_C·N/k) when a share x_C is given."""
+    if not p.cartels:
+        return 0
+    return p.n_C if p.x_C is None else round(p.x_C * p.N / p.k)
+
+
+def _select_cartel(
+    pop: Population, free: np.ndarray, k: int, selection: str, rng: np.random.Generator
+) -> IntArray:
+    """Choose k unassigned agents by ``cartel_selection`` (§4.4).
+
+    random: uniformly. same_field: k agents of the field of a random unassigned agent.
+    low_q / high_q: uniformly among unassigned agents in the bottom / top quartile of
+    quality (falling back to the k lowest / highest unassigned when the quartile runs
+    out). Assumption: quartiles, not the exact extremes, so that cartels are not all
+    identical across seeds.
+    """
+    cand = np.nonzero(free)[0]
+    if selection == "same_field":
+        g = pop.field[rng.choice(cand)]
+        cand = cand[pop.field[cand] == g]
+    elif selection in ("low_q", "high_q"):
+        lo, hi = np.quantile(pop.q, [0.25, 0.75])
+        quart = cand[pop.q[cand] <= lo] if selection == "low_q" else cand[pop.q[cand] >= hi]
+        if quart.size >= k:
+            cand = quart
+        else:
+            order = np.argsort(pop.q[cand])
+            cand = cand[order[:k]] if selection == "low_q" else cand[order[-k:]]
+    if cand.size < k:
+        raise ValueError(f"not enough unassigned agents to form a cartel of size {k}")
+    return rng.choice(cand, size=k, replace=False)  # random order = routing order
+
+
+def assign_roles(pop: Population, p: Params, rngs: RNGStreams) -> Roles:
+    """Assign cartels, herders, reciprocators and deference (§4.1, §4.4).
+
+    Order: cartels first, then herders and reciprocators among non-members (each by
+    the lowest values of its own uniform draw, so the sets are nested as shares grow),
+    then deference for early-career sincere agents when γ_up ≠ 1 (assumption: deference
+    applies to every early-career researcher who is otherwise sincere).
+    """
+    N = pop.N
+    strategy = np.full(N, SINCERE, dtype=int)
+    cartel_id = np.full(N, -1, dtype=int)
+    cartels: list[IntArray] = []
+    rng_c = rngs.get("strategy", "cartels")
+    for c in range(n_cartels(p)):
+        members = _select_cartel(pop, cartel_id < 0, p.k, p.cartel_selection, rng_c)
+        cartel_id[members] = c
+        strategy[members] = CARTEL
+        cartels.append(members)
+    for code, share, name in ((HERDER, p.x_herd, "herder"), (RECIPROCATOR, p.x_recip, "recip")):
+        n = round(share * N)
+        if n == 0:
+            continue
+        u = rngs.get("strategy", name).random(N)
+        cand = np.nonzero(strategy == SINCERE)[0]
+        strategy[cand[np.argsort(u[cand])[:n]]] = code
+    if p.gamma_up != 1.0:
+        strategy[(strategy == SINCERE) & (pop.stage == EARLY)] = DEFERENTIAL
+    return Roles(strategy=strategy, cartel_id=cartel_id, cartels=tuple(cartels))

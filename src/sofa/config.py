@@ -84,6 +84,15 @@ class Params:
     m: int = _p(10, "recipients", "3–all", "top-m recipients; assumption")
 
     # --- Strategic behaviour (§4.4) ---------------------------------------------------
+    regime: str = _p("T0", "—", "T0, T1, T2, T3", "§4.5 transparency regime; T0 = sealed")
+    x_herd: float = _p(0.0, "fraction", "0–0.5", "population share of herders; 0 = off")
+    x_recip: float = _p(0.0, "fraction", "0–0.5", "population share of reciprocators; 0 = off")
+    cartels: bool = _p(
+        False,
+        "switch",
+        "on/off",
+        "cartels present (n_C of size k, or share x_C); off so that the default run is A2",
+    )
     h: float = _p(0.5, "weight", "0–1", "herding weight; assumption")
     rho: float = _p(0.5, "weight", "0–1", "reciprocity weight; assumption")
     k: int = _p(5, "members", "2–20", "cartel size")
@@ -156,6 +165,16 @@ class Params:
             raise ValueError("cap must lie in (0, 1]")
         if self.flow_mode not in ("annual", "equilibrium"):
             raise ValueError(f"unknown flow_mode {self.flow_mode!r}")
+        if self.regime not in ("T0", "T1", "T2", "T3"):
+            raise ValueError(f"unknown regime {self.regime!r}")
+        if self.cartel_selection not in ("random", "same_field", "low_q", "high_q"):
+            raise ValueError(f"unknown cartel_selection {self.cartel_selection!r}")
+        if self.k < 2:
+            raise ValueError("cartel size k must be at least 2")
+        if min(self.x_herd, self.x_recip) < 0 or self.x_herd + self.x_recip > 1:
+            raise ValueError("need x_herd, x_recip ≥ 0 and x_herd + x_recip ≤ 1")
+        if self.L < 2:
+            raise ValueError("cycle length L must be at least 2")
         if self.topology not in ("clique", "ring", "star"):
             raise ValueError(f"unknown topology {self.topology!r}")
 
