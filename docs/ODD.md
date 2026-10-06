@@ -103,6 +103,11 @@ The scale s is found by bisection so that the expected mean out-degree, includin
 outside their lab are topped up at random within their field, so that at least 5 non-COI contacts exist
 regardless of whether S1 is on.
 
+*Switch* `in_field_share` (default off). The fixed ratio makes the in-field share of contacts grow with
+field size, so small fields are structural net donors. With `in_field_share = x`, p_in and p_out are
+calibrated per field (two bisections per field) so that every field expects a share x of its d contacts,
+own lab included, inside the field. This is a sensitivity switch for E5.
+
 ### 7.2 Perception [§4.3]
 q̂_ij = q_j^(1−ω) · v_j^ω · exp(σ_p ε_ij − σ_p²/2). The log-normal factor has mean 1. An optional yearly
 term exp(σ_p,t ε_ij,t − σ_p,t²/2) is off by default.
@@ -132,3 +137,4 @@ overhead) enter from M4, when production is switched on.
 ---
 
 *Change log.* v1 (M2): population, network, perception, sincere strategy, S2 cap, A0–A2.
+v1.1 (M2 review): `in_field_share` network switch.

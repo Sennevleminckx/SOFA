@@ -163,6 +163,12 @@ A full ODD protocol (Grimm et al. 2020) is to be maintained in `docs/ODD.md` fro
 Directed. P(i aware of j) = min(1, p_f · v_j^τ), with p_f = p_in for the same field and p_out
 otherwise. p_in : p_out = 10 : 1, scaled so that mean out-degree ≈ d = 40. Always aware of own lab.
 Guarantee at least 5 eligible (non-COI) contacts per agent by topping up at random within the field.
+Switch `in_field_share` (default `None`): with a fixed p_in : p_out ratio, the in-field share of
+contacts grows with field size (≈ 55 % in the 8 % field, ≈ 85 % in the 35 % field at N = 500), so small
+fields are structural net donors. Setting `in_field_share = x` instead calibrates p_in and p_out per
+field so that every field expects a share x of its d contacts inside the field (own lab included).
+Use x = 0.8 as a sensitivity run in E5 (agreed at the M2 review). Fields too small to supply x·d
+contacts saturate and `build_network` warns.
 Static in Phases 1–3. In Phase 4, a fraction r_A of each agent's contacts is resampled each year
 using current visibility.
 
@@ -305,6 +311,7 @@ is no source.
 | Network | d (mean degree) | 40 | 10–100 |
 | | p_in : p_out | 10 : 1 | 1–50 |
 | | τ (visibility → awareness) | 1.0 | 0–2 |
+| | in_field_share | None (fixed ratio) | None, 0.8 |
 | Perception | σ_p | 0.5 | 0–1.5 |
 | | ω (weight on reputation) | 0.3 | 0–1 |
 | | μ (homophily) | 1.0 | 1–5 |

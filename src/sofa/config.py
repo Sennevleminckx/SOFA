@@ -63,6 +63,13 @@ class Params:
     d: float = _p(40.0, "contacts", "10–100", "mean out-degree of awareness; assumption")
     p_in_out_ratio: float = _p(10.0, "ratio", "1–50", "within- vs between-field; assumption")
     tau: float = _p(1.0, "elasticity", "0–2", "visibility → awareness; assumption")
+    in_field_share: float | None = _p(
+        None,
+        "fraction of contacts",
+        "None, 0.8",
+        "None: fixed p_in:p_out (small fields drain); x: equal in-field share per field "
+        "(sensitivity switch, M2 review)",
+    )
     min_eligible: int = _p(5, "contacts", "—", "§4.2 guarantee of eligible contacts")
     r_A: float = _p(0.0, "fraction per year", "—", "§4.2 contact resampling (Phase 4)")
 
@@ -143,6 +150,8 @@ class Params:
                 raise ValueError(f"{name} must sum to 1; got {sum(shares)}")
         if len(self.field_shares) != self.G:
             raise ValueError("field_shares must have length G")
+        if self.in_field_share is not None and not 0.0 <= self.in_field_share <= 1.0:
+            raise ValueError("in_field_share must lie in [0, 1] or be None")
         if not 0.0 < self.cap <= 1.0:
             raise ValueError("cap must lie in (0, 1]")
         if self.flow_mode not in ("annual", "equilibrium"):

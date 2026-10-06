@@ -127,3 +127,53 @@ def test_perception_noise_mean_one(pop):
     ratio = qh / pop.q[None, :]
     assert ratio.mean() == pytest.approx(1.0, abs=0.01)
     assert np.log(ratio).std() == pytest.approx(0.5, abs=0.01)
+
+
+# --- Equal in-field share switch (M2 review) ----------------------------------------------
+def _in_field_shares(A, field, G):
+    return np.array([A[field == g][:, field == g].sum() / A[field == g].sum() for g in range(G)])
+
+
+def test_equal_in_field_share_switch():
+    """in_field_share = 0.8 gives every field ≈ 80 % in-field contacts and keeps degree d."""
+    p = Params(N=500, in_field_share=0.8)
+    pop = build_population(p, RNGStreams(2))
+    A = build_network(pop, p, RNGStreams(2))
+    np.testing.assert_allclose(_in_field_shares(A, pop.field, p.G), 0.8, atol=0.03)
+    assert abs(A.sum(axis=1).mean() - p.d) / p.d < 0.05
+    same_lab = pop.same_lab()
+    np.fill_diagonal(same_lab, False)
+    assert np.all(A[same_lab])  # own lab still always known
+    # the default rule makes the in-field share grow with field size
+    A0 = build_network(pop, Params(N=500), RNGStreams(2))
+    s0 = _in_field_shares(A0, pop.field, p.G)
+    assert s0[0] - s0[-1] > 0.2
+
+
+def test_equal_in_field_share_removes_small_field_drain():
+    """The switch lifts the two small fields' share of K towards their size.
+
+    Averaged over seeds, because single 40-person fields are noisy.
+    """
+    from sofa.model import SOFAModel
+
+    def small_field_ratio(share):
+        out = []
+        for seed in range(8):
+            m = SOFAModel(Params(N=500, in_field_share=share), seed=seed)
+            K, f = m.equilibrium()[1], m.pop.field
+            small = f >= 3  # the 12 % and 8 % fields
+            out.append(K[small].sum() / K.sum() / small.mean())
+        return np.mean(out)
+
+    before, after = small_field_ratio(None), small_field_ratio(0.8)
+    assert before < 0.93
+    assert after > before + 0.03
+    assert abs(after - 1.0) < abs(before - 1.0)
+
+
+def test_equal_in_field_share_warns_when_infeasible():
+    p = Params(N=300, in_field_share=0.8)  # smallest field: 24 researchers, 32 contacts needed
+    pop = build_population(p, RNGStreams(0))
+    with pytest.warns(UserWarning, match="can supply only"):
+        build_network(pop, p, RNGStreams(0))

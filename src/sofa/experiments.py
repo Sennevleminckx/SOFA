@@ -382,7 +382,10 @@ def _e1_seed(cfg: dict[str, Any], seed: int) -> list[dict]:
     for sigma_p in cfg["sigma_ps"]:
         for omega in cfg["omegas"]:
             pc = baselines.a2_params(p.replace(sigma_p=sigma_p, omega=omega))
-            W = SOFAModel(pc, seed=seed, world=world).donation_matrix(1)
+            model = SOFAModel(pc, seed=seed, world=world)
+            if not model.is_static():  # the closed form is valid only for a fixed W (§2.3)
+                raise ValueError("E1 uses the closed form, but this W changes over time")
+            W = model.donation_matrix(1)
             for alpha in cfg["alphas"]:
                 R, K = steady_state(W, alpha, p.B)
                 r = row("A2", K, alpha=alpha, sigma_p=sigma_p, omega=omega)
