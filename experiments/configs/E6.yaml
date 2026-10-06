@@ -23,6 +23,8 @@ audits:            # name → overrides
   "S5 audit": {p_audit: 0.5, s4_weighted: false, r_thr: 0.2, s_sanction: 0.5}
   "T3 peer reports": {p_peer: 0.1}      # applied under T3 only
 c_ms: [0.05, 0.2]
+null_models: true   # without audits, also run "imitation only" (μ_s = 0) and "mutation only"
+                    # (r_imit = 0) to separate selection from mutation drift (M5 finding)
 trajectory_metrics: [share_sincere, share_herder, share_reciprocator, share_cartel,
                      share_shirker, share_best_responder, share_in_cartels, n_cartels,
                      cartel_size_mean, output_vs_equal, gini, early_ratio, fallbacks,

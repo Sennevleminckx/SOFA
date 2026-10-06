@@ -760,19 +760,29 @@ def run_e5(cfg: dict[str, Any], seeds: int, out: Path, n_jobs: int = -1) -> dict
 
 # --- E6: evolution of strategies (§7) --------------------------------------------------
 def e6_cells(cfg: dict[str, Any]) -> list[tuple[dict, dict]]:
-    """(label, overrides) for every E6 cell; peer reports only under T3."""
+    """(label, overrides) for every E6 cell; peer reports only under T3.
+
+    ``dynamics`` = "both" is the full model. Without audits, two null models separate
+    selection from drift: "imitation only" (μ_s = 0) and "mutation only" (r_imit = 0,
+    which shows where mutation alone would take the population).
+    """
+    nulls = {"imitation only": {"mu_s": 0.0}, "mutation only": {"r_imit": 0.0}}
     out = []
     for regime in cfg["regimes"]:
         for audit, overrides in cfg["audits"].items():
             if "p_peer" in overrides and regime != "T3":
                 continue
             for c_m in cfg["c_ms"]:
-                out.append(
-                    (
-                        {"regime": regime, "audit": audit, "c_m": c_m},
-                        {"regime": regime, "c_m": c_m, **overrides},
+                variants = {"both": {}}
+                if audit == "none" and cfg.get("null_models", False):
+                    variants.update(nulls)
+                for dyn, extra in variants.items():
+                    out.append(
+                        (
+                            {"regime": regime, "audit": audit, "c_m": c_m, "dynamics": dyn},
+                            {"regime": regime, "c_m": c_m, **overrides, **extra},
+                        )
                     )
-                )
     return out
 
 

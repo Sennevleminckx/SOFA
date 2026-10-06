@@ -1170,6 +1170,8 @@ STRATEGY_STYLE = {  # fixed categorical order (never cycled)
 def e6_prevalence(tr: pd.DataFrame, out: Path, c_m: float = 0.05) -> list[Path]:
     """Strategy shares over time, by regime (columns) and audit (rows) (§7 E6)."""
     d = tr[np.isclose(tr.c_m, c_m)]
+    if "dynamics" in d:
+        d = d[d.dynamics == "both"]
     cols = [
         ("T0", "none"),
         ("T1", "none"),
@@ -1218,9 +1220,67 @@ def e6_prevalence(tr: pd.DataFrame, out: Path, c_m: float = 0.05) -> list[Path]:
         return _save(fig, out, f"E6_prevalence_cm{c_m:g}")
 
 
+def e6_selection(cells: pd.DataFrame, out: Path) -> list[Path]:
+    """Plot selection against drift: the sincere share under the full and null models.
+
+    The null models are imitation only and mutation only, shown by regime and moral cost.
+    """
+    d = cells[cells.audit == "none"]
+    if "dynamics" not in d or d.dynamics.nunique() < 3:
+        return []
+    styles = {
+        "imitation only": ("#6da7ec", "s", "Imitation only (μ_s = 0)"),
+        "both": ("#256abf", "o", "Imitation + mutation"),
+        "mutation only": (MUTED, "D", "Mutation only (no selection)"),
+    }
+    regimes = sorted(d.regime.unique())
+    with mpl.rc_context(STYLE):
+        fig, axes = plt.subplots(1, 2, figsize=(10, 3.9), sharey=True)
+        for ax, cm in zip(axes, sorted(d.c_m.unique()), strict=False):
+            for j, (dyn, (colour, marker, label)) in enumerate(styles.items()):
+                sub = d[np.isclose(d.c_m, cm) & (d.dynamics == dyn)]
+                for i, reg in enumerate(regimes):
+                    m, lo, hi = _ci95(sub[sub.regime == reg].share_sincere)
+                    ax.errorbar(
+                        i + (j - 1) * 0.18,
+                        m,
+                        yerr=[[m - lo], [hi - m]],
+                        color=colour,
+                        marker=marker,
+                        ms=5,
+                        capsize=2,
+                        lw=1.3,
+                        label=label if i == 0 else None,
+                    )
+            ax.axhline(0.8, color=INK, lw=0.8, ls=":")
+            ax.annotate(
+                "start (80 %)",
+                (len(regimes) - 0.6, 0.8),
+                xytext=(0, 3),
+                textcoords="offset points",
+                fontsize=7.5,
+                color=INK,
+                ha="right",
+            )
+            ax.set_xticks(range(len(regimes)), regimes)
+            ax.set(title=f"c_m = {cm:g}", xlabel="Transparency regime")
+            ax.grid(axis="x", visible=False)
+        axes[0].set_ylabel("Sincere share (mean of last years)")
+        axes[0].legend(loc="lower left", fontsize=7.5)
+        fig.suptitle(
+            "Selection or drift? Sincere share after 100 years without audits "
+            f"({d.seed.nunique()} seeds, 95 % intervals)",
+            x=0.01,
+            ha="left",
+            fontsize=10,
+        )
+        fig.tight_layout()
+        return _save(fig, out, "E6_selection")
+
+
 def e6_summary(cells: pd.DataFrame, out: Path) -> list[Path]:
     """End-of-run sincere share, cartel membership and output, by regime × audit × c_m."""
-    d = cells.copy()
+    d = cells[cells.dynamics == "both"].copy() if "dynamics" in cells else cells.copy()
     d["cell"] = d.regime + np.where(d.audit == "none", "", " · " + d.audit)
     order = [
         "T0",
