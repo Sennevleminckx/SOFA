@@ -1539,24 +1539,36 @@ def e7_overview(prcc: pd.DataFrame, block: str, out: Path) -> list[Path]:
 
 
 def e7_scatter(
-    df: pd.DataFrame, prcc: pd.DataFrame, block: str, outcomes: list[str], out: Path, top: int = 3
+    df: pd.DataFrame,
+    prcc: pd.DataFrame,
+    block: str,
+    outcomes: dict[str, list[str] | None],
+    out: Path,
+    top: int = 3,
 ) -> list[Path]:
     """Outcome against its strongest factors, with binned medians (checks monotonicity).
 
     PRCC assumes monotone effects; the binned medians (deciles of the factor) show where
-    a relationship bends or reverses.
+    a relationship bends or reverses. ``outcomes`` maps each outcome to the factors to
+    show, or to None for its ``top`` factors by |PRCC|. The y-axis spans the 1st–99th
+    percentiles, so a few extreme samples do not flatten the rest.
     """
     d = prcc[prcc.block == block]
     with mpl.rc_context(STYLE):
         fig, axes = plt.subplots(
             len(outcomes), top, figsize=(3.3 * top, 2.4 * len(outcomes)), squeeze=False
         )
-        for row, outc in zip(axes, outcomes, strict=True):
+        for row, (outc, chosen) in zip(axes, outcomes.items(), strict=True):
             t = d[(d.outcome == outc) & (d.factor != "dummy")].dropna(subset=["prcc"])
-            best = t.reindex(t.prcc.abs().sort_values(ascending=False).index).factor.head(top)
+            best = chosen or list(
+                t.reindex(t.prcc.abs().sort_values(ascending=False).index).factor.head(top)
+            )
             for ax, f in zip(row, best, strict=False):
                 x, y = df[f].to_numpy(float), df[outc].to_numpy(float)
                 ok = np.isfinite(y)
+                lo, hi = np.quantile(y[ok], [0.01, 0.99])
+                pad = 0.05 * (hi - lo) if hi > lo else 0.05
+                ax.set_ylim(lo - pad, hi + pad)
                 ax.scatter(x[ok], y[ok], s=5, color=BLUE_RAMP[0], alpha=0.5, lw=0, zorder=2)
                 if np.unique(x).size > 10:
                     edges = np.unique(np.quantile(x[ok], np.linspace(0, 1, 11)))
@@ -1573,7 +1585,7 @@ def e7_scatter(
                 ax.set_xlabel(_flabel(f))
             row[0].set_ylabel(OUTCOME_LABELS.get(outc, outc))
         fig.suptitle(
-            f"E7 {block}: outcomes against their three strongest factors "
+            f"E7 {block}: outcomes against their strongest (or selected) factors "
             "(dots = samples; line = median by factor decile)",
             x=0.01,
             ha="left",
@@ -1583,10 +1595,16 @@ def e7_scatter(
         return _save(fig, out, f"E7_scatter_{block}")
 
 
-E7_SCATTER = {
-    "mechanics": ["output_vs_equal", "gini", "early_ratio", "premium_rel_bound"],
-    "safeguards": ["premium", "collateral_loss"],
-    "evolution": ["share_sincere", "strategic_play", "share_in_cartels"],
+E7_SCATTER: dict[str, dict[str, list[str] | None]] = {
+    "mechanics": {
+        "output_vs_equal": None,
+        "efficiency": ["alpha", "sigma_p", "omega"],  # H1: E peaks at intermediate α
+        "gini": None,
+        "early_ratio": None,
+        "premium_rel_bound": ["alpha", "lam", "omega"],  # feedback lifts Π above the bound
+    },
+    "safeguards": {"premium": None, "collateral_loss": None},
+    "evolution": {"share_sincere": None, "strategic_play": None, "share_in_cartels": None},
 }
 
 
@@ -1600,7 +1618,7 @@ def plot_e7(results: Path) -> list[Path]:
         paths += e7_overview(prcc, block, figs)
         paths += e7_tornado(prcc, block, figs)
         df = pd.read_parquet(src / f"E7_{block}.parquet")
-        paths += e7_scatter(df, prcc, block, E7_SCATTER.get(block, []), figs)
+        paths += e7_scatter(df, prcc, block, E7_SCATTER.get(block, {}), figs)
     return paths
 
 
