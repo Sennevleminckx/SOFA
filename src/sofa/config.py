@@ -120,6 +120,14 @@ class Params:
     s_sanction: float = _p(0.5, "fraction of K", "—", "S5 sanction")
     K_max: float | None = _p(None, "money", "—", "S6 receipt ceiling; None = off")
 
+    # --- Allocation mechanism (§4.10) -------------------------------------------------
+    mechanism: str = _p(
+        "sofa",
+        "—",
+        "sofa, equal, oracle, panel, lottery",
+        "allocation mechanism run in the yearly loop: SOFA (A2 when sincere), A0, A1, A3, A4",
+    )
+
     # --- Production and feedback (§4.8) -----------------------------------------------
     theta: float = _p(0.5, "elasticity", "0.2–0.9", "diminishing returns to funding")
     sigma_y: float = _p(0.3, "log-sd", "0–0.8", "output noise; assumption")

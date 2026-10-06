@@ -175,3 +175,33 @@ def allocation_metrics(
     }
     out.update({f"field_{g}_ratio": float(r) for g, r in enumerate(field_r)})
     return out
+
+
+# --- Output and overhead (§4.8, §6) -----------------------------------------------------
+def output_metrics(
+    K: FloatArray,
+    q: FloatArray,
+    ybar: FloatArray,
+    y: FloatArray,
+    cost: FloatArray,
+    theta: float,
+    B: float,
+) -> dict[str, float]:
+    """Compute expected and realised output, overhead and net efficiency (§4.8, §6).
+
+    ``overhead`` is the output forgone through time spent on the mechanism,
+    Σ q_i (K_i/B)^θ cost_i. ``efficiency_net`` = (Y_net − Y_A0)/(Y_A1 − Y_A0), with Y_net
+    the expected output after overhead and A0/A1 cost-free; it equals ``efficiency`` when
+    the mechanism costs nothing.
+    """
+    gross = expected_output(K, q, theta, B)
+    y0 = expected_output(np.full_like(np.asarray(q, float), B), q, theta, B)
+    y1 = expected_output(oracle_allocation(q, theta, B), q, theta, B)
+    net = float(np.sum(ybar))
+    return {
+        "output_expected": net,
+        "output_realised": float(np.sum(y)),
+        "overhead": gross - net,
+        "overhead_share": (gross - net) / gross if gross > 0 else float("nan"),
+        "efficiency_net": (net - y0) / (y1 - y0) if not np.isclose(y1, y0) else float("nan"),
+    }
