@@ -4,8 +4,9 @@
   sincere rows, and :func:`cartel_rows`, the cartel topologies (clique, ring, star).
 * Milestone 2: the sincere strategy (:func:`eligible_mask`, :func:`sincere_scores`,
   :func:`sincere_rows`).
+* Milestone 3: deference, herders, reciprocators and cartel members in the full model.
 
-Herders, reciprocators, deference and best-responders follow at Milestones 3 and 5.
+Best-responders follow at Milestone 5.
 """
 
 from __future__ import annotations
@@ -42,7 +43,7 @@ def sincere_rows(S: FloatArray, E: BoolArray, m: int, beta: float) -> FloatArray
     Rows with fewer than m eligible recipients use all of them; rows with none are zero
     (their donations go to the pool). Scores must be positive on eligible entries.
     """
-    N = S.shape[0]
+    N = S.shape[1]  # rows may be a subset of agents
     Se = np.where(E, S, 0.0)
     if m < N - 1:
         top = np.argpartition(-Se, m - 1, axis=1)[:, :m]
@@ -54,6 +55,65 @@ def sincere_rows(S: FloatArray, E: BoolArray, m: int, beta: float) -> FloatArray
     W = np.where(keep, Se**beta if beta != 1.0 else Se, 0.0)
     tot = W.sum(axis=1, keepdims=True)
     return np.divide(W, tot, out=np.zeros_like(W), where=tot > 0)
+
+
+def deference_scores(
+    S: FloatArray, deferential: BoolArray, senior: BoolArray, same_field: BoolArray, gamma: float
+) -> FloatArray:
+    """Deferential donors multiply S_ij by γ_up for seniors j of their own field (§4.4)."""
+    boost = deferential[:, None] & senior[None, :] & same_field
+    return np.where(boost, gamma * S, S)
+
+
+# --- Herders (§4.4; need T1+) ----------------------------------------------------------
+def herder_scores(S: FloatArray, R_prev: FloatArray, h: float) -> FloatArray:
+    """S_ij^herd = S_ij^{1−h} · (R_j(t−1)/mean R)^h (§4.4); then treated as sincere."""
+    return S ** (1.0 - h) * (R_prev / R_prev.mean())[None, :] ** h
+
+
+# --- Reciprocators (§4.4; need T2+) ----------------------------------------------------
+def reciprocity_shares(F_prev: FloatArray) -> tuple[FloatArray, BoolArray]:
+    """g_ij = share of i's received donations last year that came from j (§4.4).
+
+    Returns (g, received), with ``received[i]`` False when i received nothing (then
+    the reciprocator falls back to sincere).
+    """
+    received_from = F_prev.T  # [i, j] = flow j → i
+    tot = received_from.sum(axis=1, keepdims=True)
+    g = np.divide(received_from, tot, out=np.zeros_like(received_from), where=tot > 0)
+    return g, tot[:, 0] > 0
+
+
+def reciprocator_rows(
+    w_sincere: FloatArray, g: FloatArray, received: BoolArray, rho: float
+) -> FloatArray:
+    """w_i = (1 − ρ) w_i^sincere + ρ g_i, or w_i^sincere if i received nothing (§4.4)."""
+    return np.where(received[:, None], (1.0 - rho) * w_sincere + rho * g, w_sincere)
+
+
+# --- Cartel members in the full model (§4.4) ------------------------------------------
+def cartel_member_rows(
+    S: FloatArray,
+    E: BoolArray,
+    members: Sequence[int],
+    phi: float,
+    m: int,
+    beta: float,
+    topology: str,
+) -> FloatArray:
+    """Rows for one cartel's members, in member order (§4.4).
+
+    Row = φ·internal (by topology) + (1 − φ)·sincere rule restricted to eligible
+    *non-members* of this cartel, so the internal share is exactly φ (§2.3.5).
+    Assumption: members know each other, so internal routing ignores awareness. If a
+    member has no eligible non-member, that (1 − φ) share is unplaced (→ pool).
+    """
+    members = np.asarray(members)
+    N = S.shape[1]
+    outside = np.ones(N, dtype=bool)
+    outside[members] = False
+    sincere_part = sincere_rows(S[members], E[members] & outside[None, :], m, beta)
+    return phi * internal_rows(list(members), N, topology) + (1.0 - phi) * sincere_part
 
 
 def random_sparse_W(N: int, d: int, rng: np.random.Generator) -> FloatArray:

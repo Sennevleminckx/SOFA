@@ -114,6 +114,44 @@ def steady_state(W: FloatArray, alpha: float, B: float) -> tuple[FloatArray, Flo
     return R, (1.0 - alpha) * R
 
 
+def steady_state_general(
+    W: FloatArray,
+    alpha: float,
+    B: float,
+    sg: FlowSafeguard | None = None,
+    tol: float = 1e-13,
+    max_iter: int = 100_000,
+) -> FlowState:
+    """Steady state for fixed W with flow-level safeguards (exact fixed point).
+
+    S3 makes the update nonlinear in R, so there is no closed form. The fixed point of
+    the annual map is found by iterating it with the pool redistributed in the same
+    year: the pool lag of §2.2 changes the path, not the fixed point. Starts from the
+    closed form without flow safeguards. Without flow-level safeguards it reduces to
+    :func:`steady_state`.
+
+    Raises ``RuntimeError`` if the iteration has not converged after ``max_iter`` steps.
+    """
+    N = W.shape[0]
+    R, _ = steady_state(W, alpha, B)
+    if sg is None or not getattr(sg, "active", True):
+        F = flows_at_steady_state(W, alpha, R)
+        pool = float(alpha * R @ (1.0 - W.sum(axis=1)))
+        return FlowState(R=R, K=(1.0 - alpha) * R, F=F, pool=pool)
+    row_leak = alpha * (1.0 - W.sum(axis=1))
+    for _ in range(max_iter):
+        F, flow_leak = sg.apply_flow_level(alpha * W * R[:, None], W)
+        pool = float(row_leak @ R + flow_leak)
+        R_new = B + pool / N + F.sum(axis=0)
+        if np.abs(R_new - R).max() <= tol * max(1.0, R_new.max()):
+            R = R_new
+            F, flow_leak = sg.apply_flow_level(alpha * W * R[:, None], W)
+            pool = float(row_leak @ R + flow_leak)
+            return FlowState(R=R, K=(1.0 - alpha) * R, F=F, pool=pool)
+        R = R_new
+    raise RuntimeError("steady_state_general did not converge")
+
+
 def return_multipliers(W: FloatArray, alpha: float) -> FloatArray:
     """Γ = (I − αWᵀ)⁻¹, with Γ[i, j] = ∂R_i per extra unit received by j (§4.4).
 
