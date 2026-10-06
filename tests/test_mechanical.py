@@ -240,3 +240,21 @@ def test_horizon_warning():
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         Params(alpha=0.8, T=60, T_eval=10).check_horizon()
+
+
+def test_horizon_warning_with_pool():
+    """A pool-diverting safeguard doubles the required burn-in (§3 amendment)."""
+    base = Params(alpha=0.8, T=60, T_eval=10)  # 50 ≥ 22.4 without pool, ≥ 44.8 with pool
+    assert not base.diverts_to_pool()
+    for change in ({"cap": 0.2}, {"delta": 0.5}, {"delta_L": 0.5}, {"K_max": 3.0}):
+        p = base.replace(**change)
+        assert p.diverts_to_pool()
+        assert p.min_transient_years() == pytest.approx(2 * base.min_transient_years())
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            p.check_horizon()  # 50 years still suffice at α = 0.8
+        with pytest.warns(HorizonWarning, match="pool in use"):
+            p.replace(T=50).check_horizon()  # 40 < 44.8
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        base.replace(T=50).check_horizon()  # 40 ≥ 22.4 without a pool

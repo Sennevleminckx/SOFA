@@ -105,7 +105,10 @@ These were checked numerically (N = 400, random sparse W) before writing this sp
 6. **Rings evade pairwise safeguards.** A ring cartel (i₁ → i₂ → … → i_k → i₁) with φ = 1 has
    *zero* pairwise mutual flow, yet obtains the same premium (≈ 1.96 at α = 0.5, k = 5).
 7. **Per-recipient cap.** With cap c on the share of a donor's budget that any single recipient may
-   get, a clique can route at most φ_max = min(1, (k − 1)c) internally, so Π ≤ 1/(1 − α·φ_max).
+   get, a clique can route at most φ_max = min(1, (k − 1)c) internally, so Π ≤ 1/(1 − α·φ_max)
+   when the capped excess is redistributed outside the cartel. If the excess instead goes to the
+   pool, members recapture k/N of it through the equal pool top-up, and
+   φ′ = φ_max + (1 − φ_max)·k/N replaces φ_max (verified numerically, not proven; see reports/M1.md).
 8. **Oracle allocation.** With expected output y_i = q_i K_i^θ (0 < θ < 1) and Σ K = N·B, the
    output-maximising allocation is K_i ∝ q_i^{1/(1−θ)}.
 
@@ -121,7 +124,10 @@ simulated where the closed form suffices; use the closed form as the reference.
   sees all flows, applies safeguards and may audit.
 - **Scales.** One step = one year. Default horizon T = 60 years; outcomes averaged over the last
   T_eval = 10 years. Require T − T_eval ≥ 5/(−ln α) so the start-up transient is below e⁻⁵ ≈ 0.7 %
-  (≈ 22 years at α = 0.8, ≈ 48 at α = 0.9); `run()` should raise a warning otherwise. Default N = 500 (development 300; maximum about 2000 with dense matrices).
+  (≈ 22 years at α = 0.8, ≈ 48 at α = 0.9); `run()` should raise a warning otherwise. When any
+  safeguard diverts money to the pool, require T − T_eval ≥ 10/(−ln α) instead (≈ 45 years at
+  α = 0.8, ≈ 95 at α = 0.9): pooled money arrives one year later than direct flows (§2.2, §4.7), so
+  the pool channel decays at up to √α per year (see reports/M1.md). Default N = 500 (development 300; maximum about 2000 with dense matrices).
 - **Process order within a year t:**
   1. Observe information permitted by the transparency regime (§4.5), all dated t − 1.
   2. Each agent builds its donation row w_i(t) from its strategy (§4.4).
@@ -451,13 +457,17 @@ Analytic (static W, N = 400; tolerance 1e-10 unless stated otherwise):
 - `test_group_balance_identity` for random subsets C.
 - `test_cartel_exact_form`: for any clique, α, φ, Σ_{i∈C} K_i = (1−α)(k·B + I_C)/(1−αφ) using the
   realised inflow I_C (tolerance 1e-10).
-- `test_cartel_premium_analytic`: clique, k = 2, φ = 1, α = 0.5 → Π within 1 % of 2.0. Across the
+- `test_cartel_premium_analytic`: clique, k = 2, φ = 1, α = 0.5 → Π within 1 % of 2.0 for the mean
+  over at least 10 seeds (single random graphs can fall about 2 % short), and Π ≤ 2.0 for every seed. Across the
   E2 grid, Π ≤ 1/(1−αφ) + 1e-9 always. For k = 5 and α = 0.8, the relative shortfall, averaged over
   at least 5 seeds, shrinks monotonically as N goes 200 → 400 → 800 (reference: about 9 %, 4 %, 2 %). (Do not assert a fixed tolerance at high α and large k;
   the shortfall legitimately reaches about 20 % at α = 0.9, k = 10, N = 400.)
 - `test_ring_zero_mutual_flow_same_premium`: ring with φ = 1 has Σ min(F_ij, F_ji) = 0 within the
   cartel and Π ≈ clique Π (within 5 %).
-- `test_cap_bounds_premium`: with cap c, Π ≤ 1/(1 − α·min(1, (k−1)c)) + tolerance.
+- `test_cap_bounds_premium`: with cap c, Π ≤ 1/(1 − α·min(1, (k−1)c)) + 1e-9 when the capped excess
+  is placed outside the cartel; when it leaks to the pool, Π ≤ the amended bound with φ′ (§2.3.7).
+- `test_horizon_warning`: `run()` warns when T − T_eval is below 5/(−ln α), or below 10/(−ln α) when
+  a pool-diverting safeguard is on.
 - `test_oracle_optimal`: random budget-preserving perturbations of A1 never raise Y.
 
 Mechanical:

@@ -151,16 +151,34 @@ class Params:
             raise ValueError(f"unknown topology {self.topology!r}")
 
     # --- Horizon check (§3) -----------------------------------------------------------
+    def diverts_to_pool(self) -> bool:
+        """Whether any safeguard is switched on that diverts money to the pool (§4.6)."""
+        return (
+            self.cap < 1.0
+            or self.delta > 0.0
+            or self.delta_L > 0.0
+            or self.p_audit > 0.0
+            or self.K_max is not None
+        )
+
     def min_transient_years(self) -> float:
-        """Years needed for the start-up transient to fall below e⁻⁵ (§3, §2.3.1)."""
-        return 0.0 if self.alpha == 0.0 else 5.0 / (-math.log(self.alpha))
+        """Years needed for the start-up transient to fall below e⁻⁵ (§3, §2.3.1).
+
+        5/(−ln α) without a pool; 10/(−ln α) when a safeguard diverts money to the pool,
+        because pooled money arrives one year later and decays at up to √α per year (§3).
+        """
+        if self.alpha == 0.0:
+            return 0.0
+        factor = 10.0 if self.diverts_to_pool() else 5.0
+        return factor / (-math.log(self.alpha))
 
     def check_horizon(self) -> None:
-        """Warn if T − T_eval < 5/(−ln α), as required of ``run()`` (§3)."""
+        """Warn if the burn-in T − T_eval is too short, as required of ``run()`` (§3)."""
         need = self.min_transient_years()
         if self.T - self.T_eval < need:
+            rule = "10/(−ln α) (pool in use)" if self.diverts_to_pool() else "5/(−ln α)"
             warnings.warn(
-                f"T − T_eval = {self.T - self.T_eval} years < 5/(−ln α) = {need:.1f} years "
+                f"T − T_eval = {self.T - self.T_eval} years < {rule} = {need:.1f} years "
                 f"at α = {self.alpha}: the start-up transient exceeds e⁻⁵ in the evaluation "
                 "window.",
                 HorizonWarning,
