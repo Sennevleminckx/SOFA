@@ -7,8 +7,9 @@ respond to incentives and information (cartels, herding, reciprocity, transparen
 
 The full specification is in [`CLAUDE.md`](CLAUDE.md). Checkpoint reports are in [`reports/`](reports/).
 
-**Status:** Milestone 3 complete (cartels, herders, reciprocators, deference, transparency regimes
-T0–T3, safeguards S1–S4; experiments E2–E4), awaiting review. See `reports/M1.md` … `reports/M3.md`.
+**Status:** Milestone 4 complete (production, visibility feedback, turnover, contact resampling;
+panel review and lottery comparators; experiment E5), awaiting review. See `reports/M1.md` …
+`reports/M4.md`.
 
 ## Installation
 
@@ -28,8 +29,8 @@ python -m sofa.experiments plot E0 --out results/
 python -m sofa.experiments run E1 --seeds 10 --n 300 --out results/dev   # development scale
 python -m sofa.experiments run E1 --seeds 50 --n 500 --out results/full  # full scale
 python -m sofa.experiments plot E1 --out results/full
-for E in E2 E3 E4; do python -m sofa.experiments run $E --seeds 50 --n 500 --out results/full; done
-for E in E2 E3 E4; do python -m sofa.experiments plot $E --out results/full; done
+for E in E2 E3 E4 E5; do python -m sofa.experiments run $E --seeds 50 --n 500 --out results/full; done
+for E in E2 E3 E4 E5; do python -m sofa.experiments plot $E --out results/full; done
 ```
 
 Cells in which the donation matrix cannot change between years are solved directly rather than
@@ -47,6 +48,9 @@ res.summary()  # means over the last T_eval years
 # a 5-member ring cartel under the cycle-return discount, solved directly
 m = SOFAModel(Params(cartels=True, topology="ring", delta_L=1.0, L=5), seed=1)
 R, K, W = m.equilibrium()
+
+# panel review under reputation feedback and turnover, same loop as SOFA
+SOFAModel(Params(mechanism="panel", b_share=0.5, lam=0.2, turnover=True), seed=1).run()
 ```
 
 Results are written as parquet (with config hash and git commit in the file metadata) to
@@ -56,8 +60,9 @@ Results are written as parquet (with config hash and git commit in the file meta
 
 ```
 src/sofa/      config, rng, flows, population (incl. strategy roles), network, perception,
-               information (regimes), strategies, safeguards (S1–S4), baselines (A0–A2),
-               metrics, model, experiments (CLI), plotting
+               information (regimes), strategies, safeguards (S1–S4), production (output,
+               feedback, turnover), baselines (A0–A4), metrics, model, experiments (CLI),
+               plotting
 docs/ODD.md    ODD protocol
 experiments/   YAML configurations per experiment
 tests/         analytic (§2.3) and mechanical tests
