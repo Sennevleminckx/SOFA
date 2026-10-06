@@ -7,8 +7,9 @@ respond to incentives and information (cartels, herding, reciprocity, transparen
 
 The full specification is in [`CLAUDE.md`](CLAUDE.md). Checkpoint reports are in [`reports/`](reports/).
 
-**Status:** Milestone 5 complete (imitation, mutation, shirking and detection, S5 audits, peer
-reports, best-responders; experiment E6), awaiting review. See `reports/M1.md` … `reports/M5.md`.
+**Status:** all six milestones built (M6: global sensitivity analysis E7, final figures, complete
+ODD), awaiting review of M6. Findings in one page: [`reports/summary.md`](reports/summary.md).
+Checkpoint reports: `reports/M1.md` … `reports/M6.md`.
 
 ## Installation
 
@@ -30,7 +31,13 @@ python -m sofa.experiments run E1 --seeds 50 --n 500 --out results/full  # full 
 python -m sofa.experiments plot E1 --out results/full
 for E in E2 E3 E4 E5 E6; do python -m sofa.experiments run $E --seeds 50 --n 500 --out results/full; done
 for E in E2 E3 E4 E5 E6; do python -m sofa.experiments plot $E --out results/full; done
+python -m sofa.experiments run E7 --seeds 1000 --n 500 --out results/full  # 1000 LHS samples
+python -m sofa.experiments plot E7 --out results/full
 ```
+
+For E7, `--seeds` is the number of Latin hypercube samples (each with its own seed) and `--n` sets N
+where N is not itself a factor (the evolution block). The full E7 run takes about two hours on four
+cores, mostly the mechanics block at N up to 2000.
 
 Cells in which the donation matrix cannot change between years are solved directly rather than
 simulated (guarded by `SOFAModel.is_static()`, with one annual cross-check per experiment).
@@ -53,7 +60,11 @@ SOFAModel(Params(mechanism="panel", lam=0.2, turnover=True), seed=1).run()
 
 # strategies evolving by imitation under full transparency, with platform audits
 SOFAModel(Params(adaptation=True, cartels=True, x_C=0.05, x_herd=0.05, regime="T3",
-                 p_audit=0.5, s4_weighted=False, T=100, T_eval=20), seed=1).run()
+                 p_audit=0.5, T=100, T_eval=20), seed=1).run()
+
+# partial rank correlations of any outcome table against its sampled factors
+from sofa.sensitivity import Factor, latin_hypercube, prcc
+X = latin_hypercube([Factor("alpha", 0.1, 0.9), Factor("dummy")], n=200, seed=0)
 ```
 
 Experiment seeds run in parallel (joblib) with one BLAS thread per worker; without that limit
@@ -68,9 +79,10 @@ Results are written as parquet (with config hash and git commit in the file meta
 src/sofa/      config, rng, flows, population (incl. strategy roles), network, perception,
                information (regimes), strategies, safeguards (S1–S4), production (output,
                feedback, turnover), adaptation (imitation, shirking, audits S5, best
-               responses), baselines (A0–A4), metrics, model, experiments (CLI), plotting
+               responses), baselines (A0–A4), metrics, model, experiments (CLI),
+               sensitivity (LHS, PRCC), plotting
 docs/ODD.md    ODD protocol
 experiments/   YAML configurations per experiment
 tests/         analytic (§2.3) and mechanical tests
-reports/       checkpoint reports M1.md …
+reports/       checkpoint reports M1.md … M6.md, one-page summary, figures/
 ```
