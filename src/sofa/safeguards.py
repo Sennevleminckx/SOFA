@@ -8,7 +8,7 @@ S5 audits and S6 receipt ceiling follow at Milestone 5.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -102,6 +102,7 @@ class FlowSafeguards:
     delta: float = 0.0
     delta_L: float = 0.0
     L: int = 3
+    _r_cache: dict = field(default_factory=dict, compare=False, repr=False)
 
     @property
     def active(self) -> bool:
@@ -115,6 +116,15 @@ class FlowSafeguards:
             F, lk = mutual_flow_discount(F, self.delta)
             leak += lk
         if self.delta_L > 0.0:
-            F, lk, _ = cycle_return_discount(F, W, self.alpha, self.delta_L, self.L)
+            F, lk = self._cycle_discount(F, W)
             leak += lk
         return F, leak
+
+    def _cycle_discount(self, F: FloatArray, W: FloatArray) -> tuple[FloatArray, float]:
+        """S4 with the return shares r cached per W (r depends on W only, §4.6)."""
+        key = id(W)
+        if self._r_cache.get("key") != key or self._r_cache.get("W") is not W:
+            r = cycle_return_shares(W, self.alpha, self.L)
+            self._r_cache.update(key=key, W=W, factor=np.clip(1.0 - self.delta_L * r, 0.0, 1.0))
+        F_after = F * self._r_cache["factor"][:, None]
+        return F_after, float(F.sum() - F_after.sum())

@@ -137,6 +137,7 @@ class SOFAModel:
         self.F = np.zeros((self.N, self.N))
         self.pool = 0.0
         self._W_cache: FloatArray | None = None
+        self._score_cache: tuple[FloatArray, np.ndarray, FloatArray] | None = None
         self._same_field = self.pop.same_field()
         self._same_lab = self.pop.same_lab()
         self.roles = roles if roles is not None else assign_roles(self.pop, params, self.rngs)
@@ -161,6 +162,24 @@ class SOFAModel:
     def strategy_rows(self, t: int) -> FloatArray:
         """Donation rows from each agent's effective strategy (§3 steps 1–2, §4.4)."""
         p, eff = self.p, self.eff
+        S, E, W_sincere = self._scores(t)
+        W = W_sincere.copy()
+        herd = eff == HERDER
+        if herd.any():  # §4.4: uses everyone's R(t − 1), visible under T1+
+            W[herd] = sincere_rows(herder_scores(S[herd], self.R, p.h), E[herd], p.m, p.beta)
+        recip = eff == RECIPROCATOR
+        if recip.any():  # §4.4: uses own donors in F(t − 1), visible under T2+
+            g, received = reciprocity_shares(self.F)
+            W[recip] = reciprocator_rows(W[recip], g[recip], received[recip], p.rho)
+        for members in self.roles.cartels:  # §4.4 cartel topologies
+            W[members] = cartel_member_rows(S, E, members, p.phi, p.m, p.beta, p.topology)
+        return W
+
+    def _scores(self, t: int) -> tuple[FloatArray, np.ndarray, FloatArray]:
+        """Sincere scores S, eligibility E and sincere rows; cached while perception is static."""
+        if self._score_cache is not None:
+            return self._score_cache
+        p, eff = self.p, self.eff
         eps_t = yearly_noise(self.N, t, self.rngs) if p.sigma_pt > 0 else None
         qhat = perceived_quality(
             self.pop.q, self.v, self.world.eps, p.omega, p.sigma_p, eps_t, p.sigma_pt
@@ -172,17 +191,10 @@ class SOFAModel:
                 S, deferential, self.pop.stage == SENIOR, self._same_field, p.gamma_up
             )
         E = eligible_mask(self.world.A, self._same_lab if p.coi else None)  # §4.4
-        W = sincere_rows(S, E, p.m, p.beta)
-        herd = eff == HERDER
-        if herd.any():  # §4.4: uses everyone's R(t − 1), visible under T1+
-            W[herd] = sincere_rows(herder_scores(S[herd], self.R, p.h), E[herd], p.m, p.beta)
-        recip = eff == RECIPROCATOR
-        if recip.any():  # §4.4: uses own donors in F(t − 1), visible under T2+
-            g, received = reciprocity_shares(self.F)
-            W[recip] = reciprocator_rows(W[recip], g[recip], received[recip], p.rho)
-        for members in self.roles.cartels:  # §4.4 cartel topologies
-            W[members] = cartel_member_rows(S, E, members, p.phi, p.m, p.beta, p.topology)
-        return W
+        out = (S, E, sincere_rows(S, E, p.m, p.beta))
+        if p.sigma_pt == 0.0 and p.lam == 0.0:  # perception and visibility static
+            self._score_cache = out
+        return out
 
     def donation_matrix(self, t: int) -> FloatArray:
         """W(t): strategies (§4.4) then row-level safeguards (§4.6). Cached when static."""
@@ -272,3 +284,31 @@ class SOFAModel:
         """Return (R*, K*, W) of :meth:`equilibrium_state`."""
         st, W = self.equilibrium_state()
         return st.R, st.K, W
+
+    def solve(self) -> dict[str, float]:
+        """Metrics of the solved steady state, as one evaluation-year row (static W only).
+
+        Used by experiments for cells in which W cannot change (M2 review decision):
+        the steady state replaces simulating T years. Raises if W is dynamic.
+        """
+        st, W = self.equilibrium_state()
+        self.t = self.p.T
+        self.R, self.K, self.F, self.pool = st.R, st.K, st.F, st.pool
+        row = self.record(W)
+        row["stability"] = 1.0  # static W: ranks never change
+        return row
+
+
+def evaluate(model: SOFAModel) -> dict[str, float]:
+    """Solve the cell if W is static, otherwise simulate it (M2 review decision).
+
+    Returns the cell's metrics (for simulated cells, means over the last T_eval years)
+    plus ``solved`` (1.0 or 0.0) recording which path was taken.
+    """
+    if model.is_static():
+        out = model.solve()
+        out["solved"] = 1.0
+    else:
+        out = model.run().summary()
+        out["solved"] = 0.0
+    return out
