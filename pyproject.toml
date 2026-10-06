@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sofa-abm"
+version = "0.1.0"
+description = "A toy agent-based model of Self-Organised Funding Allocation (SOFA)"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "Senne Vleminckx", email = "senne.vleminckx@uantwerpen.be" }]
+dependencies = [
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "pandas>=2.1",
+    "pyarrow>=14",
+    "networkx>=3.2",
+    "matplotlib>=3.8",
+    "pyyaml>=6.0",
+    "joblib>=1.3",
+    "SALib>=1.4",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.4", "ruff>=0.4", "hypothesis>=6.90"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["error::RuntimeWarning"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "A", "C4", "SIM", "RUF", "D"]
+ignore = [
+    "D105",   # magic method docstrings
+    "D107",   # __init__ docstring (documented on the class)
+    "N803",   # argument names such as W, R, B mirror the specification
+    "N806",   # local names such as W, R, K mirror the specification
+    "N802",   # function names such as random_sparse_W mirror the specification
+    "N815",   # parameter names such as r_A mirror the specification
+    "C408",   # dict(...) reads better for long tidy result rows
+    "RUF001", # strings use the specification's notation (α, φ, −, –)
+    "RUF002", # UK English prose uses non-ASCII typography in docstrings
+    "RUF003",
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["D100", "D101", "D102", "D103", "D104"]
