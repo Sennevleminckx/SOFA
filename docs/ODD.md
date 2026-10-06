@@ -23,8 +23,9 @@ side of RQ2–RQ4 (which strategies spread under imitation, and under which rule
    group balance, cartel premium. Verified in E0 (`reports/M1.md`).
 2. With sincere donors, concentration rises with the pass-on fraction α [H1].
 3. With sincere, perfectly informed donors and α → 0, every allocation tends to equal split.
-4. A cartel's aggregate funding obeys the exact identity of [§2.3.5] in the full model; its premium
-   stays below 1/(1 − αφ) [H2].
+4. A cartel's aggregate funding obeys the exact identity of [§2.3.5] in the full model. Without
+   reputation feedback its premium stays below 1/(1 − αφ) [H2]; with feedback (λ, ω > 0) it can
+   exceed it, because funding raises visibility (E7, `reports/M6.md`).
 5. A ring cartel has zero pairwise mutual flow, so pairwise discounts cannot see it [§2.3.6, H3].
 
 ## 2. Entities, state variables and scales

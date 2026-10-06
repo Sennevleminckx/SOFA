@@ -1479,7 +1479,8 @@ def e7_tornado(prcc: pd.DataFrame, block: str, out: Path, top: int = 10) -> list
             ax.set_title(OUTCOME_LABELS.get(outc, outc), loc="left")
         for ax in axes.flat[len(outcomes) :]:
             ax.set_visible(False)
-        for ax in axes[-1]:
+        for ax in axes.flat[max(0, len(outcomes) - ncol) : len(outcomes)]:
+            ax.tick_params(labelbottom=True)  # bottom panel of each column
             ax.set_xlabel("PRCC")
         n = int(d.n.max())
         fig.suptitle(
