@@ -80,7 +80,7 @@ def mutual_flow_discount(F: FloatArray, delta: float) -> tuple[FloatArray, float
 
 
 def cycle_return_discount(
-    F: FloatArray, W: FloatArray, alpha: float, delta_L: float, L: int
+    F: FloatArray, W: FloatArray, alpha: float, delta_L: float, L: int, weighted: bool = True
 ) -> tuple[FloatArray, float, FloatArray]:
     """S4: scale i's outgoing flows by (1 − δ_L·r_i), r_i the L-hop return share (§4.6).
 
@@ -88,7 +88,7 @@ def cycle_return_discount(
     r = α + α³ = 1.63), so the factor is clipped at 0 (assumption). Returns
     (F_after, leak, r).
     """
-    r = cycle_return_shares(W, alpha, L)
+    r = cycle_return_shares(W, alpha, L, weighted)
     factor = np.clip(1.0 - delta_L * r, 0.0, 1.0)
     F_after = F * factor[:, None]
     return F_after, float(F.sum() - F_after.sum()), r
@@ -102,6 +102,7 @@ class FlowSafeguards:
     delta: float = 0.0
     delta_L: float = 0.0
     L: int = 3
+    weighted: bool = True  # S4 α-weighted (spec) or unweighted variant (M3 review)
     _r_cache: dict = field(default_factory=dict, compare=False, repr=False)
 
     @property
@@ -124,7 +125,7 @@ class FlowSafeguards:
         """S4 with the return shares r cached per W (r depends on W only, §4.6)."""
         key = id(W)
         if self._r_cache.get("key") != key or self._r_cache.get("W") is not W:
-            r = cycle_return_shares(W, self.alpha, self.L)
+            r = cycle_return_shares(W, self.alpha, self.L, self.weighted)
             self._r_cache.update(key=key, W=W, factor=np.clip(1.0 - self.delta_L * r, 0.0, 1.0))
         F_after = F * self._r_cache["factor"][:, None]
         return F_after, float(F.sum() - F_after.sum())

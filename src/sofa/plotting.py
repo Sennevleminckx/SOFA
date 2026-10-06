@@ -782,6 +782,8 @@ def e4_frontier(df: pd.DataFrame, out: Path) -> list[Path]:
 
 CARTEL_STYLE = {
     "clique k=5": {"color": "#2a78d6", "marker": "o"},
+    "clique k=11": {"color": "#eda100", "marker": "D"},
+    "clique k=20": {"color": "#e87ba4", "marker": "v"},
     "ring k=3": {"color": "#eb6834", "marker": "s"},
     "ring k=5": {"color": "#1baf7a", "marker": "^"},
 }
@@ -799,17 +801,20 @@ def e4_dotplot(df: pd.DataFrame, out: Path) -> list[Path]:
         "S3 δ=1",
         "S4 L=3 δ=1",
         "S4 L=5 δ=1",
+        "S4u L=3 δ=1",
+        "S4u L=5 δ=1",
         "α=0.35",
         "α=0.2",
         "S3(1)+S4(L=5)",
         "S1+S2(0.1)+S3(1)",
         "S1+S2(0.1)+S3(1)+S4(L=5)",
+        "S2(0.1)+S4u(L=5)",
     ]
     order = [o for o in order if o in set(t.safeguard)][::-1]
     y = {name: i for i, name in enumerate(order)}
     with mpl.rc_context(STYLE):
         fig, (a, b) = plt.subplots(
-            1, 2, figsize=(10.5, 5.2), sharey=True, gridspec_kw={"width_ratios": [1.6, 1]}
+            1, 2, figsize=(10.5, 6.6), sharey=True, gridspec_kw={"width_ratios": [1.6, 1]}
         )
         a.axvline(0, color=INK, lw=0.9)
         a.axvline(1, color=MUTED, lw=0.9, ls=":")
@@ -817,7 +822,7 @@ def e4_dotplot(df: pd.DataFrame, out: Path) -> list[Path]:
             d = t[t.cartel == cartel]
             a.scatter(
                 d.removed,
-                [y[sg] + (j - 1) * 0.18 for sg in d.safeguard],
+                [y[sg] + (j - 2) * 0.13 for sg in d.safeguard],
                 s=34,
                 color=st_["color"],
                 marker=st_["marker"],
@@ -834,7 +839,7 @@ def e4_dotplot(df: pd.DataFrame, out: Path) -> list[Path]:
         a.legend(
             loc="upper center",
             bbox_to_anchor=(0.5, -0.11),
-            ncol=3,
+            ncol=5,
             fontsize=7.5,
             title="Cartel (φ = 1)",
             title_fontsize=7.5,

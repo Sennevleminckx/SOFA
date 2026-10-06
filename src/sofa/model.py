@@ -143,7 +143,9 @@ class SOFAModel:
         self.roles = roles if roles is not None else assign_roles(self.pop, params, self.rngs)
         # §4.5: strategies needing more information than the regime gives fall back
         self.eff, self.n_fallbacks = effective_strategies(self.roles.strategy, params.regime)
-        self.flow_sg = FlowSafeguards(params.alpha, params.delta, params.delta_L, params.L)
+        self.flow_sg = FlowSafeguards(
+            params.alpha, params.delta, params.delta_L, params.L, params.s4_weighted
+        )
 
     # --- Donation matrix (§3 steps 1–3) ------------------------------------------------
     def is_static(self) -> bool:

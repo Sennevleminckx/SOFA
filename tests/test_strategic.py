@@ -338,3 +338,31 @@ def test_switched_off_m3_reproduces_m2(world):
         regime="T3",
     )
     assert np.array_equal(SOFAModel(off, seed=11, world=world).equilibrium()[1], ref)
+
+
+# --- S4 unweighted variant (M3 review) -------------------------------------------------
+def test_s4_unweighted_sees_ring_fully():
+    k, alpha = 5, 0.5
+    W = internal_rows(list(range(k)), k, "ring")
+    _, _, r_w = cycle_return_discount(alpha * W, W, alpha, 1.0, L=5)
+    F2, leak, r_u = cycle_return_discount(alpha * W, W, alpha, 1.0, L=5, weighted=False)
+    np.testing.assert_allclose(r_w, alpha**4)
+    np.testing.assert_allclose(r_u, 1.0)  # a unit returns with certainty after k hops
+    assert np.all(F2 == 0.0) and leak == pytest.approx(alpha * k)
+    _, _, r_short = cycle_return_discount(alpha * W, W, alpha, 1.0, L=4, weighted=False)
+    assert np.all(r_short == 0)  # still blind when L < k
+
+
+def test_s4_unweighted_switch(world):
+    """The variant removes much more of a 5-ring's premium than the spec rule; default unchanged."""
+
+    def premium(**sg):
+        base = P.replace(**sg)
+        K0 = SOFAModel(base, seed=11, world=world).equilibrium()[1]
+        m = SOFAModel(base.replace(cartels=True, k=5, topology="ring"), seed=11, world=world)
+        return metrics.cartel_premium(m.equilibrium()[1], K0, m.roles.cartels[0])
+
+    weighted = premium(delta_L=1.0, L=5)
+    unweighted = premium(delta_L=1.0, L=5, s4_weighted=False)
+    assert unweighted < weighted - 0.5
+    assert Params().s4_weighted is True

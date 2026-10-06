@@ -162,10 +162,14 @@ def return_multipliers(W: FloatArray, alpha: float) -> FloatArray:
     return np.linalg.solve(np.eye(N) - alpha * W.T, np.eye(N))
 
 
-def cycle_return_shares(W: FloatArray, alpha: float, L: int = 3) -> FloatArray:
+def cycle_return_shares(
+    W: FloatArray, alpha: float, L: int = 3, weighted: bool = True
+) -> FloatArray:
     """r_i = Σ_{l=2}^{L} α^{l−1} (W^l)_ii: share of i's donation returning within L hops (§4.6 S4).
 
-    Truncated power series; costs (L − 1) dense matrix products.
+    With ``weighted=False`` the α weights are dropped: r_i = Σ_{l=2}^{L} (W^l)_ii, the
+    probability that a unit returns within L hops (S4 variant, M3 review). Truncated power
+    series; costs (L − 1) dense matrix products.
     """
     if L < 2:
         return np.zeros(W.shape[0])
@@ -173,7 +177,7 @@ def cycle_return_shares(W: FloatArray, alpha: float, L: int = 3) -> FloatArray:
     P = W
     for ell in range(2, L + 1):
         P = P @ W  # P = W^ell
-        r += alpha ** (ell - 1) * np.diag(P)
+        r += (alpha ** (ell - 1) if weighted else 1.0) * np.diag(P)
     return r
 
 

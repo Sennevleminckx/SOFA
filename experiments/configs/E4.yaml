@@ -1,16 +1,18 @@
 # E4 Safeguards (Milestone 3, §7). Each safeguard alone and in combination, and α as a
 # lever, against one cartel (φ = 1, random members). Premium against the same safeguard
-# with the cartel off (CRN); collateral cost = efficiency loss in the all-sincere
+# with the cartel off (CRN). S4u = unweighted S4 variant (M3 review). Collateral cost = efficiency loss in the all-sincere
 # population relative to no safeguard at α = 0.5. All cells are static and solved.
 experiment: E4
 description: Safeguard trade-off frontier against clique and ring cartels.
 base:
   N: 500
   alpha: 0.5
-cartels:          # (topology, k)
+cartels:          # (topology, k); cliques of 11 and 20 test cap evasion by size (M3 review)
   - [clique, 5]
-  - [ring, 5]
+  - [clique, 11]
+  - [clique, 20]
   - [ring, 3]
+  - [ring, 5]
 safeguards:       # name → parameter overrides
   none: {}
   "S1 COI": {coi: true}
@@ -21,9 +23,12 @@ safeguards:       # name → parameter overrides
   "S3 δ=1": {delta: 1.0}
   "S4 L=3 δ=1": {delta_L: 1.0, L: 3}
   "S4 L=5 δ=1": {delta_L: 1.0, L: 5}
+  "S4u L=3 δ=1": {delta_L: 1.0, L: 3, s4_weighted: false}
+  "S4u L=5 δ=1": {delta_L: 1.0, L: 5, s4_weighted: false}
   "α=0.35": {alpha: 0.35}
   "α=0.2": {alpha: 0.2}
   "S1+S2(0.1)+S3(1)": {coi: true, cap: 0.1, delta: 1.0}
   "S3(1)+S4(L=5)": {delta: 1.0, delta_L: 1.0, L: 5}
   "S1+S2(0.1)+S3(1)+S4(L=5)": {coi: true, cap: 0.1, delta: 1.0, delta_L: 1.0, L: 5}
+  "S2(0.1)+S4u(L=5)": {cap: 0.1, delta_L: 1.0, L: 5, s4_weighted: false}
 seeds: 50

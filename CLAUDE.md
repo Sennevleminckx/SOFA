@@ -93,8 +93,13 @@ These were checked numerically (N = 400, random sparse W) before writing this sp
    ```
    Π = Σ_{i∈C} K_i(cartel) / Σ_{i∈C} K_i(no cartel) ≈ 1 / (1 − αφ)
    ```
-   independent of the members' quality. It is an upper bound, exact as k/N → 0. Larger cartels fall
+   independent of the members' quality. It is an upper bound, exact as k/N → 0, provided the inflow
+   from outsiders does not rise. Larger cartels fall
    slightly short because their lost outflow lowers outsiders' receipts and so the cartel's own inflow.
+   (M3 review.) With φ < 1 in a heterogeneous network, internal equalisation can redirect members'
+   outside giving towards recipients who feed the cartel, raising I_C. The full model exceeds the bound
+   in 0.3 % of E2 cells, by ≤ 0.8 %. The exact form below always holds; the static-W test of §10 is
+   unaffected.
    This shortfall grows with α and k/N. Numerical check at N = 400, φ = 1: α = 0.5 → Π = 1.996 / 1.975 /
    1.946 for k = 2 / 5 / 10 (prediction 2.00); α = 0.8 → worst-case shortfall 2 % / 7 % / 10 %;
    α = 0.9 → 4 % / 11 % / 19 %.
@@ -233,6 +238,10 @@ Membership can be set by a number of cartels n_C of size k, or by a population s
   r_i = Σ_{l=2}^{L} α^{l−1} (W^l)_ii is the fraction of a unit donated by i that comes back to i
   within L hops (each onward hop passes on α). Scale i's outgoing flows by (1 − δ_L · r_i); the
   reduction goes to the pool. Default L = 3. It targets rings that S3 misses.
+  Switch `s4_weighted` (default True = the α-weighted rule above). Because each hop is weighted by α,
+  a k-ring is seen only when L ≥ k, and then only through r = α^{k−1}. With `s4_weighted = False`,
+  r_i = Σ_{l=2}^{L} (W^l)_ii is the unweighted probability that a unit returns within L hops, so a
+  k-ring with φ = 1 is seen fully (r = 1) when L ≥ k (M3 review; still needs L ≥ k).
 - **S5 Audit and sanction (Phase 5).** Each year, with probability p_audit, the platform flags agents
   with r_i > r_thr (or cartel-level anomalies) and removes a fraction s of their K, which goes to the
   pool.
@@ -331,6 +340,7 @@ is no source.
 | | γ_up (deference) | 1.0 (off) | 1–5 |
 | Safeguards | c (cap) | 1.0 (off) | 0.05–0.5 |
 | | δ, δ_L, L | 0, 0, 3 | 0–1, 0–1, 2–5 |
+| | s4_weighted | True | True, False |
 | | p_audit, r_thr, s | 0, 0.2, 0.5 | — |
 | Production | θ | 0.5 | 0.2–0.9 |
 | | σ_y | 0.3 | 0–0.8 |
@@ -381,7 +391,8 @@ Each experiment has a YAML config in `experiments/configs/` and a runner entry p
   ∈ {0, 0.1, 0.25, 0.5} → Gini, E, equity metrics, fallbacks.
 - **E4 Safeguards.** Each of S1–S4 and α, alone and combined, against clique and ring cartels →
   trade-off frontier (reduction in Π on one axis, collateral efficiency loss on the other). Must show
-  ring evasion of S3 and its correction by S4.
+  ring evasion of S3 and its correction by S4. Include S4 in both weightings, and cliques of
+  k ∈ {5, 11, 20} under the cap, because a clique with k ≥ 1/c + 1 is untouched by cap c (M3 review).
 - **E5 Feedback and equity.** λ > 0, ω, θ, turnover on/off → concentration over time, early-career and
   small-field shares, rank stability. Compare with A3/A4 under the same feedback.
 - **E6 Evolution (Phase 5).** Imitation dynamics × regime × audit → long-run prevalence of strategic
