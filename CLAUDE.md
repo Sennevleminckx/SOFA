@@ -116,6 +116,13 @@ The ABM earns its keep **only** where W becomes endogenous: agents choosing whom
 to incentives, information and a reputation feedback loop. Mechanics with fixed W must never be
 simulated where the closed form suffices; use the closed form as the reference.
 
+**Decision (M2 review): solve, with a guard.** Any experiment cell in which W cannot change between
+years uses the steady state directly: the closed form, or the exact fixed point when a nonlinear
+flow-level safeguard (S3) is on. It never simulates T years. The runner must check
+`SOFAModel.is_static()` and raise if W can change. Each such experiment also simulates at least one
+cell in annual mode and reports the largest difference from the solved result. Cells in which agents
+respond to last year's state (herders, reciprocators, feedback, adaptation) are always simulated.
+
 ---
 
 ## 3. Model overview (ODD-style summary)
