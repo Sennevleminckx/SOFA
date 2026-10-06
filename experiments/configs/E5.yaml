@@ -3,8 +3,10 @@
 # Part A (feedback): every mechanism runs in the same yearly loop with the same production,
 # visibility feedback (λ) and turnover. ω is the evaluators' weight on reputation: it is
 # applied to SOFA donors (omega) and to panels (omega_p) alike. Panels and lotteries are run
-# with the spec's b_share = 0 (unfunded researchers get nothing) and with b_share = 0.5,
-# which matches SOFA's unconditional floor (1 − α)·B at α = 0.5.
+# with b_share = 0.5 = 1 − α, matching SOFA's unconditional floor (headline, M4 review), and with
+# the spec's original b_share = 0 (unfunded researchers get nothing) as a labelled variant.
+# Contact resampling r_A ∈ {0, 0.1} is varied for SOFA only (the only mechanism using the
+# awareness network; M4 review).
 # Part B (comparison, H6): λ = 0; SOFA over ω × σ_p; panels and lotteries over ω.
 # Static cells (SOFA with λ = 0 and no turnover; equal split; oracle without turnover) are
 # solved; all others are simulated for T years (M2 review decision).
@@ -23,6 +25,7 @@ mechanisms:        # (name, b_share)
 lams: [0.0, 0.2, 0.4]
 omegas: [0.0, 0.3, 0.6]
 turnover: [false, true]
+r_As: [0.0, 0.1]
 theta_sensitivity:          # extra cells at λ = 0.2, ω = 0.3, no turnover
   thetas: [0.3, 0.8]
 comparison:

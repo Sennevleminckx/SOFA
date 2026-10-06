@@ -133,7 +133,7 @@ def test_panel_budget_and_selection():
     scores = rng.normal(size=500)
     K = baselines.a3_panel(scores, P.replace(N=500))
     assert K.sum() == pytest.approx(500.0)
-    funded = K > 0
+    funded = K.min() + 1e-9 < K  # above the equal base
     assert funded.sum() == 100
     assert scores[funded].min() > scores[~funded].max()
     Kb = baselines.a3_panel(scores, P.replace(N=500, b_share=0.4))
@@ -145,7 +145,7 @@ def test_lottery_budget_and_triage():
     scores = rng.normal(size=500)
     K = baselines.a4_lottery(scores, P.replace(N=500), np.random.default_rng(3))
     assert K.sum() == pytest.approx(500.0)
-    funded = np.nonzero(K > 0)[0]
+    funded = np.nonzero(K.min() + 1e-9 < K)[0]
     triaged = np.argsort(-scores)[:250]
     assert funded.size == 100 and np.isin(funded, triaged).all()
     K2 = baselines.a4_lottery(scores, P.replace(N=500), np.random.default_rng(4))
@@ -187,8 +187,8 @@ def test_panel_and_lottery_share_scores(world):
         RNGStreams(21).fresh("baselines", "panel", 1),
     )
     triaged = np.argsort(-scores)[:150]
-    assert np.isin(np.nonzero(Ka > 0)[0], triaged).all()
-    assert np.isin(np.nonzero(Kb > 0)[0], triaged).all()
+    assert np.isin(np.nonzero(Ka > Ka.min() + 1e-9)[0], triaged).all()
+    assert np.isin(np.nonzero(Kb > Kb.min() + 1e-9)[0], triaged).all()
 
 
 def test_output_metrics_identity():
@@ -206,3 +206,12 @@ def test_output_vs_equal_scale(world):
     assert eq["output_vs_equal"] == pytest.approx(0.0, abs=1e-12)
     assert orc["output_vs_equal"] == pytest.approx(orc["oracle_vs_equal"])
     assert orc["oracle_vs_equal"] > 0
+
+
+def test_b_share_default_matches_sofa_floor():
+    """Headline A3/A4 (M4 review): equal base 1 − α, SOFA's unconditional floor."""
+    assert Params().b_share is None and Params().b_share_eff == pytest.approx(0.5)
+    assert Params(alpha=0.8).b_share_eff == pytest.approx(0.2)
+    assert Params(b_share=0.0).b_share_eff == 0.0
+    K = baselines.a3_panel(np.arange(500.0), Params(N=500))
+    assert K.min() == pytest.approx(0.5) and K.sum() == pytest.approx(500.0)

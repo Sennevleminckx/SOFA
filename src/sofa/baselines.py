@@ -69,7 +69,7 @@ def a3_panel(scores: FloatArray, p: Params) -> FloatArray:
     """A3: fund the top p_s by panel score with grant B/p_s (single-year awards, §4.10)."""
     N = scores.size
     funded = np.argsort(-scores, kind="stable")[: n_funded(N, p.p_s)]
-    return _grants(funded, N, p.B, p.b_share)
+    return _grants(funded, N, p.B, p.b_share_eff)
 
 
 def a4_lottery(scores: FloatArray, p: Params, rng: np.random.Generator) -> FloatArray:
@@ -78,7 +78,7 @@ def a4_lottery(scores: FloatArray, p: Params, rng: np.random.Generator) -> Float
     n_triage = max(n_funded(N, p.p_s), round(p.p_triage * N))
     triaged = np.argsort(-scores, kind="stable")[:n_triage]
     funded = rng.choice(triaged, size=n_funded(N, p.p_s), replace=False)
-    return _grants(funded, N, p.B, p.b_share)
+    return _grants(funded, N, p.B, p.b_share_eff)
 
 
 def mechanism_cost(mechanism: str, N: int, p: Params) -> FloatArray:

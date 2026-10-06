@@ -302,7 +302,11 @@ def flow_step(R_prev, W, alpha, B, pool_prev, sg):
   share p_s is funded with grant B/p_s (variant: fraction b_share of the budget as equal base, the
   rest competitive). Applicants lose c_write of output; reviewers lose c_rev per review (n_rev reviews
   per proposal). Single-year awards in this toy version.
-- **A4 Lottery:** triage the top p_triage by panel score, then fund a random subset of size p_s·N.
+  **Headline variant (M4 review):** b_share = 1 − α, which matches SOFA's unconditional floor
+  (1 − α)·B, so both systems guarantee everyone the same share and differ only in how the rest is
+  distributed. b_share = 0 (grant B/p_s, nothing for the unfunded) is kept as a labelled variant.
+- **A4 Lottery:** triage the top p_triage by panel score, then fund a random subset of size p_s·N
+  (same b_share convention as A3).
 
 ---
 
@@ -347,6 +351,7 @@ is no source.
 | | λ | 0 (Phases 1–3); 0.2 | 0–0.5 |
 | | c_sofa | 0.01 | 0–0.05 |
 | Panel | p_s, σ_panel, ω_p | 0.2, 1.0, 0.3 | 0.1–0.4, 0.3–2, 0–1 |
+| | b_share | 1 − α (matched floor; M4 review) | 0, 1 − α |
 | | c_write, c_rev, n_rev | 0.10, 0.01, 3 | 0.02–0.25 |
 | Adaptation | r_imit, κ_F, μ_s | 0.1, 0.1, 0.01 | — |
 | | c_m (× B), p_low | 0.05, 0.1 | 0–0.2, 0–0.5 |
@@ -359,9 +364,12 @@ is no source.
 Record per (scenario, seed, year). Report the mean over the last T_eval years, then mean and 95 %
 interval across seeds.
 
+- **Output relative to equal split** (primary, M4 review): Y_net/Y_A0 − 1, with Y_net the expected
+  output after mechanism overhead; report the oracle's gain Y_A1/Y_A0 − 1 for scale.
 - **Allocative efficiency** E = (Y − Y_A0)/(Y_A1 − Y_A0), where Y = Σ ȳ_i is expected output.
   E = 0 means no better than equal split; E = 1 means oracle; E can be negative. Also report
-  Spearman ρ(K, q).
+  Spearman ρ(K, q). Because Y_A1 − Y_A0 is small (≈ 13 % of output at the defaults), E magnifies
+  differences; report it alongside, not instead of, output relative to equal split.
 - **Concentration:** Gini(K), top-10 % share, Lorenz curves.
 - **Cartel premium** Π (§2.3.5), computed against a common-random-numbers counterfactual (same
   seed, cartel switched off), plotted against the analytic 1/(1 − αφ_eff). Also report **who pays**:
@@ -393,8 +401,9 @@ Each experiment has a YAML config in `experiments/configs/` and a runner entry p
   trade-off frontier (reduction in Π on one axis, collateral efficiency loss on the other). Must show
   ring evasion of S3 and its correction by S4. Include S4 in both weightings, and cliques of
   k ∈ {5, 11, 20} under the cap, because a clique with k ≥ 1/c + 1 is untouched by cap c (M3 review).
-- **E5 Feedback and equity.** λ > 0, ω, θ, turnover on/off → concentration over time, early-career and
-  small-field shares, rank stability. Compare with A3/A4 under the same feedback.
+- **E5 Feedback and equity.** λ > 0, ω, θ, turnover on/off, contact resampling r_A ∈ {0, 0.1}
+  (M4 review) → concentration over time, early-career and small-field shares, rank stability.
+  Compare with A3/A4 under the same feedback.
 - **E6 Evolution (Phase 5).** Imitation dynamics × regime × audit → long-run prevalence of strategic
   behaviour. Is sincere donating evolutionarily stable, and under which rules?
 - **E7 Global sensitivity.** Latin hypercube (n ≈ 1000) over the "Explore" ranges + PRCC for

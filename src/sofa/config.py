@@ -93,6 +93,7 @@ class Params:
         "on/off",
         "cartels present (n_C of size k, or share x_C); off so that the default run is A2",
     )
+    x_best: float = _p(0.0, "fraction", "0–0.5", "population share of best-responders (T3)")
     h: float = _p(0.5, "weight", "0–1", "herding weight; assumption")
     rho: float = _p(0.5, "weight", "0–1", "reciprocity weight; assumption")
     k: int = _p(5, "members", "2–20", "cartel size")
@@ -144,7 +145,12 @@ class Params:
     c_write: float = _p(0.10, "fraction of output", "0.02–0.25", "Herbert et al. 2013")
     c_rev: float = _p(0.01, "fraction of output per review", "—", "assumption")
     n_rev: int = _p(3, "reviews per proposal", "—", "assumption")
-    b_share: float = _p(0.0, "fraction of budget", "—", "equal-base variant of A3")
+    b_share: float | None = _p(
+        None,
+        "fraction of budget",
+        "0, 1 − α",
+        "A3/A4 equal base; None = 1 − α, matching SOFA's floor (headline, M4 review)",
+    )
     p_triage: float = _p(0.5, "fraction", "—", "A4 triage share; assumption")
 
     # --- Adaptation (§4.9) ------------------------------------------------------------
@@ -155,6 +161,26 @@ class Params:
     p_low: float = _p(0.1, "probability", "0–0.5", "shirking detection under T0/T1")
     p_peer: float = _p(0.0, "probability", "—", "peer reporting under T3")
     k_max: int = _p(20, "members", "—", "maximum cartel size under imitation")
+
+    adaptation: bool = _p(
+        False,
+        "switch",
+        "on/off",
+        "strategy imitation, mutation, shirking and detection (§4.9); off so that the "
+        "default run keeps fixed strategies",
+    )
+    evo_strategies: tuple[str, ...] = _p(
+        ("sincere", "herder", "reciprocator", "cartel", "best_responder"),
+        "—",
+        "—",
+        "strategies reachable by mutation (§4.9)",
+    )
+    T_burn_strategies: int = _p(
+        0,
+        "years",
+        "—",
+        "years before imitation starts (lets money settle); assumption",
+    )
 
     # --- Runs -------------------------------------------------------------------------
     seed: int = _p(0, "—", "—", "master seed for SeedSequence")
@@ -175,6 +201,8 @@ class Params:
             raise ValueError("field_shares must have length G")
         if self.in_field_share is not None and not 0.0 <= self.in_field_share <= 1.0:
             raise ValueError("in_field_share must lie in [0, 1] or be None")
+        if self.b_share is not None and not 0.0 <= self.b_share < 1.0:
+            raise ValueError("b_share must lie in [0, 1) or be None")
         if not 0.0 < self.cap <= 1.0:
             raise ValueError("cap must lie in (0, 1]")
         if self.flow_mode not in ("annual", "equilibrium"):
@@ -185,12 +213,19 @@ class Params:
             raise ValueError(f"unknown cartel_selection {self.cartel_selection!r}")
         if self.k < 2:
             raise ValueError("cartel size k must be at least 2")
-        if min(self.x_herd, self.x_recip) < 0 or self.x_herd + self.x_recip > 1:
-            raise ValueError("need x_herd, x_recip ≥ 0 and x_herd + x_recip ≤ 1")
+        if min(self.x_herd, self.x_recip, self.x_best) < 0 or (
+            self.x_herd + self.x_recip + self.x_best > 1
+        ):
+            raise ValueError("need x_herd, x_recip, x_best ≥ 0 with sum ≤ 1")
         if self.L < 2:
             raise ValueError("cycle length L must be at least 2")
         if self.topology not in ("clique", "ring", "star"):
             raise ValueError(f"unknown topology {self.topology!r}")
+
+    @property
+    def b_share_eff(self) -> float:
+        """A3/A4 equal-base share: b_share, or 1 − α when None (matched floor, M4 review)."""
+        return 1.0 - self.alpha if self.b_share is None else self.b_share
 
     # --- Horizon check (§3) -----------------------------------------------------------
     def diverts_to_pool(self) -> bool:
