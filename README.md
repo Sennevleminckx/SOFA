@@ -7,8 +7,8 @@ respond to incentives and information (cartels, herding, reciprocity, transparen
 
 The full specification is in [`CLAUDE.md`](CLAUDE.md). Checkpoint reports are in [`reports/`](reports/).
 
-**Status:** Milestone 2 complete (population, awareness network, perception, sincere donors,
-baselines A0–A2, `SOFAModel`, ODD v1, experiment E1). See `reports/M1.md` and `reports/M2.md`.
+**Status:** Milestone 3 complete (cartels, herders, reciprocators, deference, transparency regimes
+T0–T3, safeguards S1–S4; experiments E2–E4), awaiting review. See `reports/M1.md` … `reports/M3.md`.
 
 ## Installation
 
@@ -28,7 +28,12 @@ python -m sofa.experiments plot E0 --out results/
 python -m sofa.experiments run E1 --seeds 10 --n 300 --out results/dev   # development scale
 python -m sofa.experiments run E1 --seeds 50 --n 500 --out results/full  # full scale
 python -m sofa.experiments plot E1 --out results/full
+for E in E2 E3 E4; do python -m sofa.experiments run $E --seeds 50 --n 500 --out results/full; done
+for E in E2 E3 E4; do python -m sofa.experiments plot $E --out results/full; done
 ```
+
+Cells in which the donation matrix cannot change between years are solved directly rather than
+simulated (guarded by `SOFAModel.is_static()`, with one annual cross-check per experiment).
 
 A single model run:
 
@@ -38,6 +43,10 @@ from sofa.model import SOFAModel
 
 res = SOFAModel(Params(alpha=0.6), seed=1).run()
 res.summary()  # means over the last T_eval years
+
+# a 5-member ring cartel under the cycle-return discount, solved directly
+m = SOFAModel(Params(cartels=True, topology="ring", delta_L=1.0, L=5), seed=1)
+R, K, W = m.equilibrium()
 ```
 
 Results are written as parquet (with config hash and git commit in the file metadata) to
@@ -46,9 +55,9 @@ Results are written as parquet (with config hash and git commit in the file meta
 ## Layout
 
 ```
-src/sofa/      config, rng, flows, population, network, perception, strategies (sincere,
-               cartel rows), safeguards (S2 cap only), baselines (A0–A2), metrics, model,
-               experiments (CLI), plotting
+src/sofa/      config, rng, flows, population (incl. strategy roles), network, perception,
+               information (regimes), strategies, safeguards (S1–S4), baselines (A0–A2),
+               metrics, model, experiments (CLI), plotting
 docs/ODD.md    ODD protocol
 experiments/   YAML configurations per experiment
 tests/         analytic (§2.3) and mechanical tests
