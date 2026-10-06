@@ -7,8 +7,10 @@ Usage::
 
 Implemented: E0 (verification against §2.3, M1), E1 (sincere mechanics, M2), E2 (cartels),
 E3 (transparency) and E4 (safeguards) (M3), E5 (feedback, equity, mechanism comparison;
-M4), E6 (evolution of strategies; M5). Cells in which W cannot change are solved,
-with a guard and one annual cross-check per experiment (M2 review decision).
+M4), E6 (evolution of strategies; M5), E7 (global sensitivity, LHS–PRCC; M6). For E7,
+``--seeds`` sets the number of hypercube samples, each run with its own seed. Cells in which
+W cannot change are solved, with a guard and one annual cross-check per experiment (M2
+review decision).
 """
 
 from __future__ import annotations
@@ -26,7 +28,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from joblib import Parallel, delayed, parallel_config
 
-from sofa import baselines, metrics
+from sofa import baselines, metrics, sensitivity
 from sofa.config import Params, load_experiment_config
 from sofa.flows import (
     cycle_return_shares,
@@ -822,6 +824,142 @@ def run_e6(cfg: dict[str, Any], seeds: int, out: Path, n_jobs: int = -1) -> dict
     return paths
 
 
+# --- E7: global sensitivity (§7) ------------------------------------------------------
+def e7_block(cfg: dict[str, Any], name: str) -> dict[str, Any]:
+    """One E7 block: base parameters, factors and its Latin hypercube design.
+
+    Each block has its own hypercube, drawn from ``lhs_seed`` and the block's position, so
+    adding or removing a block leaves the others' designs unchanged.
+    """
+    spec = cfg["blocks"][name]
+    base: Params = cfg["base"].replace(**spec.get("base", {}))
+    factors = sensitivity.factors_from_config(spec["factors"])
+    seed = int(cfg.get("lhs_seed", 0)) + sorted(cfg["blocks"]).index(name)
+    design = sensitivity.latin_hypercube(factors, int(cfg["samples"]), seed)
+    return dict(name=name, base=base, factors=factors, design=design, outcomes=spec["outcomes"])
+
+
+def _mean_K(model: SOFAModel) -> tuple[dict[str, float], np.ndarray]:
+    """Metrics and K averaged over the evaluation years: solved if static, else simulated."""
+    if model.is_static():
+        row = model.solve()
+        return row, model.K.copy()
+    res = model.run()
+    return res.summary(), np.mean([s["K"] for s in res.snapshots.values()], axis=0)
+
+
+def _e7_mechanics(p: Params, seed: int) -> dict[str, float]:
+    """Sincere SOFA with feedback; Π of one clique against the same seed; panel A3."""
+    world = build_world(p, RNGStreams(seed))
+    out, K0 = _mean_K(SOFAModel(p, seed=seed, world=world))
+    mc = SOFAModel(p.replace(cartels=True, n_C=1, topology="clique"), seed=seed, world=world)
+    _, K1 = _mean_K(mc)
+    C = mc.roles.cartels[0]
+    out["premium"] = metrics.cartel_premium(K1, K0, C)
+    out["premium_rel_bound"] = out["premium"] * (1.0 - p.alpha * p.phi)  # Π / (1/(1 − αφ))
+    out["small_field_ratio"] = out[f"field_{p.G - 1}_ratio"]
+    panel, _ = _mean_K(SOFAModel(p.replace(mechanism="panel"), seed=seed, world=world))
+    out["panel_output_vs_equal"] = panel["output_vs_equal"]
+    out["sofa_vs_panel"] = out["output_vs_equal"] - panel["output_vs_equal"]
+    return out
+
+
+def _e7_safeguards(p: Params, seed: int) -> dict[str, float]:
+    """Solve the cartel's premium with and without the sampled safeguards (static W).
+
+    Four solves share one world and one cartel (CRN): all-sincere and cartel, each with
+    the safeguards off and on. The collateral loss is the fall in output relative to equal
+    split when the safeguards are applied to the all-sincere population (§6).
+    """
+    world = build_world(p, RNGStreams(seed))
+    pc = p.replace(cartels=True, n_C=1)
+    roles = assign_roles(world.pop, pc, RNGStreams(seed))
+    C = roles.cartels[0]
+    off = dict(coi=False, cap=1.0, delta=0.0, delta_L=0.0)
+
+    def solved(params: Params, with_roles: bool) -> tuple[SOFAModel, dict[str, float]]:
+        m = SOFAModel(params, seed=seed, world=world, roles=roles if with_roles else None)
+        return m, m.solve()
+
+    (s_off, row_off), (s_on, out) = solved(p.replace(**off), False), solved(p, False)
+    (c_off, _), (c_on, _) = solved(pc.replace(**off), True), solved(pc, True)
+    out["premium"] = metrics.cartel_premium(c_on.K, s_on.K, C)
+    out["premium_off"] = metrics.cartel_premium(c_off.K, s_off.K, C)
+    out["premium_reduction"] = out["premium_off"] - out["premium"]
+    out["collateral_loss"] = row_off["output_vs_equal"] - out["output_vs_equal"]
+    out["pool_share"] = s_on.pool / (p.alpha * s_on.R.sum())
+    return out
+
+
+def _e7_evolution(p: Params, seed: int) -> dict[str, float]:
+    """Run the E6 model at one sample; strategic play counts what agents actually do."""
+    out = SOFAModel(p, seed=seed).run().summary()
+    out["strategic_play"] = (
+        1.0
+        - out["share_sincere"]
+        - out["share_deferential"]
+        - out["share_shirker"]
+        - out["fallbacks"] / p.N
+    )
+    return out
+
+
+E7_RUNNERS: dict[str, Callable[[Params, int], dict[str, float]]] = {
+    "mechanics": _e7_mechanics,
+    "safeguards": _e7_safeguards,
+    "evolution": _e7_evolution,
+}
+
+
+def _e7_sample(block: dict[str, Any], i: int) -> dict[str, Any]:
+    """Evaluate sample ``i`` of a block with seed ``i``; return codes and outcomes."""
+    row = block["design"].iloc[i]
+    p = sensitivity.apply_sample(block["base"], block["factors"], row)
+    t0 = time.perf_counter()
+    out = E7_RUNNERS[block["name"]](p, i)
+    return {"sample": i, "seed": i, **row.to_dict(), **out, "runtime_s": time.perf_counter() - t0}
+
+
+def run_e7(cfg: dict[str, Any], seeds: int, out: Path, n_jobs: int = -1) -> dict[str, Path]:
+    """Run E7; per block, write samples and outcomes, then all PRCCs to one table.
+
+    ``seeds`` is the number of hypercube samples (each run with its own seed). Blocks
+    can be restricted with ``cfg["run_blocks"]``.
+    """
+    cfg = {**cfg, "samples": seeds}
+    paths, tables = {}, []
+    for name in cfg.get("run_blocks", list(cfg["blocks"])):
+        t0 = time.perf_counter()
+        block = e7_block(cfg, name)
+        df = pd.DataFrame(map_seeds(_e7_sample, block, seeds, n_jobs))
+        meta = dict(
+            experiment="E7",
+            block=name,
+            config_hash=block["base"].config_hash(),
+            git_commit=git_commit(),
+            samples=seeds,
+            lhs_seed=cfg.get("lhs_seed", 0),
+            factors=",".join(f.name for f in block["factors"]),
+            runtime_s=f"{time.perf_counter() - t0:.1f}",
+        )
+        if name == "safeguards":  # solved cells: one annual cross-check (M2 decision)
+            row = block["design"].iloc[0]
+            p = sensitivity.apply_sample(block["base"], block["factors"], row)
+            pc = p.replace(cartels=True, n_C=1)
+            xcheck = annual_crosscheck(pc, 0, build_world(pc, RNGStreams(0)))
+            meta["annual_crosscheck"] = "sample 0 with its cartel, seed 0"
+            meta["annual_crosscheck_max_rel_diff"] = f"{xcheck:.3e}"
+        paths[name] = out / "E7" / f"E7_{name}.parquet"
+        write_parquet(df, paths[name], meta)
+        X = df[[f.name for f in block["factors"]]]
+        t = sensitivity.prcc_table(X, df, block["outcomes"])
+        t.insert(0, "block", name)
+        tables.append(t)
+    paths["prcc"] = out / "E7" / "E7_prcc.parquet"
+    write_parquet(pd.concat(tables, ignore_index=True), paths["prcc"], dict(experiment="E7"))
+    return paths
+
+
 # --- Registry and CLI -------------------------------------------------------------------
 RUNNERS: dict[str, Callable[..., dict[str, Path]]] = {
     "E0": run_e0,
@@ -831,6 +969,7 @@ RUNNERS: dict[str, Callable[..., dict[str, Path]]] = {
     "E4": run_e4,
     "E5": run_e5,
     "E6": run_e6,
+    "E7": run_e7,
 }
 
 

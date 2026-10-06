@@ -128,7 +128,7 @@ def test_e6_runner(tmp_path):
         "regimes": ["T0", "T3"],
         "audits": {
             "none": {},
-            "S5 audit": {"p_audit": 1.0, "s4_weighted": False},
+            "S5 audit": {"p_audit": 1.0},
             "T3 peer reports": {"p_peer": 0.5},
         },
         "c_ms": [0.05],
@@ -142,3 +142,31 @@ def test_e6_runner(tmp_path):
     assert set(cells[cells.audit == "T3 peer reports"].regime) == {"T3"}
     assert len(traj) == len(cells) * 12
     assert {"founded", "ended", "censored"} <= set(logs.columns)
+
+
+def test_e7_runner(tmp_path):
+    """Every block runs; designs are reproducible; the PRCC table covers every outcome."""
+    from sofa.config import load_experiment_config
+    from sofa.experiments import CONFIG_DIR, e7_block, run_e7
+
+    cfg = load_experiment_config(CONFIG_DIR / "E7.yaml")
+    cfg["base"] = cfg["base"].replace(N=120, T=25, T_eval=3)
+    for block in cfg["blocks"].values():
+        block["factors"].pop("N", None)  # keep the smoke test small
+        block["factors"]["alpha"] = [0.2, 0.6]  # short horizon: T − T_eval ≥ 10/(−ln α)
+        block["base"].update(T=25, T_eval=3)
+    cfg["samples"] = 30
+    a, b = e7_block(cfg, "evolution"), e7_block(cfg, "evolution")
+    assert a["design"].equals(b["design"])
+    paths = run_e7(cfg, 30, tmp_path, n_jobs=1)
+    prcc = pd.read_parquet(paths["prcc"])
+    for name, spec in cfg["blocks"].items():
+        df = pd.read_parquet(paths[name])
+        assert len(df) == 30 and (df.seed == df["sample"]).all()
+        got = prcc[prcc.block == name]
+        assert set(got.outcome) == set(spec["outcomes"])
+        assert set(got.factor) == set(spec["factors"])
+    sg = pd.read_parquet(paths["safeguards"])
+    assert np.isfinite(sg[cfg["blocks"]["safeguards"]["outcomes"]].to_numpy(float)).all()
+    meta = pq.read_schema(paths["safeguards"]).metadata
+    assert float(meta[b"sofa.annual_crosscheck_max_rel_diff"]) < 1e-9

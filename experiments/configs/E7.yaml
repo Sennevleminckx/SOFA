@@ -1,0 +1,89 @@
+# E7 Global sensitivity (Milestone 6, §7). Latin hypercube over the "Explore" ranges of §5,
+# plus the M5-review additions (early-career visibility multiplier, θ, μ_s, c_m), with
+# partial rank correlation coefficients (PRCC; Marino et al. 2008).
+#
+# Three blocks, each its own hypercube, because switches that are forced on in every sample
+# would condition every result on them (judgement call, reports/M6.md):
+#   mechanics   sincere SOFA with visibility feedback (λ > 0), one clique cartel for Π against
+#               the same seed without it, and a panel (A3, matched floor) for comparison.
+#               Simulated: λ > 0 makes W change from year to year.
+#   safeguards  static W, so solved (M2 review decision): S1–S4 against one clique or ring.
+#   evolution   the E6 model (imitation, mutation, shirking) with its own factors.
+# Each sample runs with its own seed (seed = sample index), so stochastic variation is part
+# of the residual; the dummy factor, which the model never reads, gives the noise floor.
+#
+# Factor syntax: [low, high] uniform; [low, high, scale] with scale in log, int, logint;
+# {levels: [...]} equiprobable categories (coded 0, 1, … in that order for the PRCC).
+experiment: E7
+description: Global sensitivity of concentration, efficiency, cartel premium and equity.
+samples: 1000
+lhs_seed: 20261006
+base:
+  N: 500
+  T: 60
+  T_eval: 10
+blocks:
+  mechanics:
+    base: {lam: 0.2}
+    factors:
+      alpha: [0.1, 0.9]
+      N: [200, 2000, int]
+      sigma_q: [0.2, 1.0]
+      lab_size: [4, 8, int]
+      kappa: [0.0, 2.0]
+      early_visibility: [0.25, 1.0]     # M5 review; default 0.5
+      d: [10.0, 100.0]
+      p_in_out_ratio: [1.0, 50.0, log]
+      tau: [0.0, 2.0]
+      sigma_p: [0.0, 1.5]
+      omega: [0.0, 1.0]
+      mu: [1.0, 5.0]
+      beta: [0.5, 3.0]
+      m: [3, 100, logint]               # "3–all"; 100 exceeds every awareness set at d ≤ 100
+      gamma_up: [1.0, 5.0]
+      k: [2, 20, int]
+      phi: [0.0, 1.0]
+      theta: [0.2, 0.9]
+      sigma_y: [0.0, 0.8]
+      lam: [0.0, 0.5]
+      c_sofa: [0.0, 0.05]
+      p_s: [0.1, 0.4]
+      sigma_panel: [0.3, 2.0]
+      omega_p: [0.0, 1.0]
+      c_write: [0.02, 0.25]
+      dummy: [0.0, 1.0]
+    outcomes: [gini, efficiency, output_vs_equal, early_ratio, premium, premium_rel_bound,
+               small_field_ratio, spearman_Kq, sofa_vs_panel]
+  safeguards:
+    base: {}
+    factors:
+      alpha: [0.1, 0.9]
+      N: [200, 2000, int]
+      k: [2, 20, int]
+      phi: [0.0, 1.0]
+      topology: {levels: [clique, ring]}
+      coi: {levels: [false, true]}
+      cap: [0.05, 0.5]
+      delta: [0.0, 1.0]
+      delta_L: [0.0, 1.0]
+      L: [2, 5, int]
+      s4_weighted: {levels: [true, false]}
+      dummy: [0.0, 1.0]
+    outcomes: [premium, premium_reduction, collateral_loss, gini, efficiency, early_ratio,
+               pool_share]
+  evolution:
+    base: {T: 100, T_eval: 20, adaptation: true, cartels: true, x_herd: 0.05, x_recip: 0.05,
+           x_best: 0.05}
+    factors:
+      alpha: [0.1, 0.9]
+      regime: {levels: [T0, T1, T2, T3]}
+      mu_s: [0.0, 0.05]                 # M5 review
+      c_m: [0.0, 0.2]                   # M5 review
+      p_low: [0.0, 0.5]
+      x_C: [0.01, 0.3]
+      k: [2, 20, int]
+      sigma_p: [0.0, 1.5]
+      omega: [0.0, 1.0]
+      dummy: [0.0, 1.0]
+    outcomes: [share_sincere, strategic_play, share_in_cartels, share_shirker, output_vs_equal,
+               gini, early_ratio]
