@@ -20,7 +20,7 @@ base:
 regimes: [T0, T1, T2, T3]
 audits:            # name → overrides
   none: {}
-  "S5 audit": {p_audit: 0.5, s4_weighted: false, r_thr: 0.2, s_sanction: 0.5}
+  "S5 audit": {p_audit: 0.5, r_thr: 0.2, s_sanction: 0.5}   # unweighted share (s5_weighted)
   "T3 peer reports": {p_peer: 0.1}      # applied under T3 only
 c_ms: [0.05, 0.2]
 null_models: true   # without audits, also run "imitation only" (μ_s = 0) and "mutation only"

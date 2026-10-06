@@ -141,7 +141,6 @@ def test_audit_sanctions_cartels_and_conserves(world):
         cartels=True,
         n_C=3,
         p_audit=1.0,
-        s4_weighted=False,
         r_thr=0.2,
         s_sanction=0.5,
         T=20,
@@ -156,6 +155,13 @@ def test_audit_sanctions_cartels_and_conserves(world):
     # kept K net of sanctions sums to N·B (gross K exceeds it by the sanctions)
     assert m.K.sum() == pytest.approx(P.N * P.B, rel=1e-5)
     assert (m.K + m.sanctions).sum() == pytest.approx(P.N * P.B + m.sanctions.sum(), rel=1e-5)
+
+
+def test_s5_weighted_share_misses_five_cliques(world):
+    """M5 review: the α-weighted share of a 5-clique (r ≈ 0.17 at α = 0.5) is below r_thr."""
+    p = P.replace(cartels=True, n_C=3, p_audit=1.0, r_thr=0.2, T=6, T_eval=2)
+    weighted = SOFAModel(p.replace(s5_weighted=True), seed=31, world=world).run().yearly
+    assert (weighted.flagged == 0).all()
 
 
 def test_peer_reports_dissolve_cartels_under_t3(world):

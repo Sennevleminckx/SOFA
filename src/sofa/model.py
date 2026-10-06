@@ -366,7 +366,7 @@ class SOFAModel:
         p, t = self.p, self.t
         rng = self.rngs.fresh("adaptation", "audit", t)
         audit_now = rng.random() < p.p_audit
-        r = cycle_return_shares(W, p.alpha, p.L, p.s4_weighted) if audit_now else None
+        r = cycle_return_shares(W, p.alpha, p.L, p.s5_weighted) if audit_now else None
         sanc, flagged = adaptation.audit_sanctions(
             self.K, r if r is not None else np.zeros(self.N), p.r_thr, p.s_sanction, audit_now
         )

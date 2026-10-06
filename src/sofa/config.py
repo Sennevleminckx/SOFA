@@ -116,6 +116,12 @@ class Params:
         "True, False",
         "S4 return share α-weighted (spec) or unweighted return probability (M3 review)",
     )
+    s5_weighted: bool = _p(
+        False,
+        "switch",
+        "True, False",
+        "S5 audits on the unweighted return share (M5 review); True = α-weighted as S4",
+    )
     p_audit: float = _p(0.0, "probability per year", "—", "S5 audits (Phase 5)")
     r_thr: float = _p(0.2, "return share", "—", "S5 audit threshold")
     s_sanction: float = _p(0.5, "fraction of K", "—", "S5 sanction")

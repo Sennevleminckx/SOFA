@@ -244,7 +244,11 @@ Membership can be set by a number of cartels n_C of size k, or by a population s
   k-ring with φ = 1 is seen fully (r = 1) when L ≥ k (M3 review; still needs L ≥ k).
 - **S5 Audit and sanction (Phase 5).** Each year, with probability p_audit, the platform flags agents
   with r_i > r_thr (or cartel-level anomalies) and removes a fraction s of their K, which goes to the
-  pool.
+  pool. Switch `s5_weighted` (default False, M5 review): the audit flags on the *unweighted* return
+  share of S4. An audit asks whether a donor's routing is circular, which the unweighted share
+  measures directly; the α-weighted share falls with α, so a fixed r_thr would mean a different
+  thing at every α, and at r_thr = 0.2 it misses 5-member cliques (r ≈ 0.17 at α = 0.5).
+  `s5_weighted = True` restores the α-weighted share.
 - **S6 Receipt ceiling K_max** (optional): excess K goes to the pool.
 - **α itself** is treated as a policy lever in every experiment.
 
@@ -287,6 +291,10 @@ def flow_step(R_prev, W, alpha, B, pool_prev, sg):
 - **Shirking inside cartels.** A cartel member may secretly donate sincerely (saving c_m) while still
   receiving from partners. Detection probability p_det = 1 under T2/T3 and p_det = p_low under T0/T1
   (only totals are observable). Detected shirkers are expelled: partners stop donating to them.
+  **Shirking rule (accepted at the M5 review; myopic).** Each year a share r_imit of active members
+  reconsider. A member shirks when c_m·B exceeds the own K it would lose by giving sincerely
+  instead of to partners, (1 − α)·αR_i·Σ_j (w_ij^cartel − w_ij^sincere)·Γ_ij, with Γ the return
+  multipliers of the best-responder. Shirkers stay shirkers until detected.
   Hypothesis: anonymity makes cartels unravel and full transparency stabilises them. Platform audits
   (S5) work under every regime because the platform always sees all flows; T3 additionally lets
   *peers* spot and report cartels (optional: peer reporting probability p_peer under T3).
@@ -355,6 +363,9 @@ is no source.
 | | c_write, c_rev, n_rev | 0.10, 0.01, 3 | 0.02–0.25 |
 | Adaptation | r_imit, κ_F, μ_s | 0.1, 0.1, 0.01 | — |
 | | c_m (× B), p_low | 0.05, 0.1 | 0–0.2, 0–0.5 |
+| | μ_s (E7 only, M5 review) | 0.01 | 0–0.05 |
+| Population | early-career visibility multiplier (E7, M5 review) | 0.5 | 0.25–1.0 |
+| Safeguards | s5_weighted (M5 review) | False | True, False |
 | Runs | seeds per scenario | 50 (development: 10) | — |
 
 ---
@@ -405,10 +416,12 @@ Each experiment has a YAML config in `experiments/configs/` and a runner entry p
   (M4 review) → concentration over time, early-career and small-field shares, rank stability.
   Compare with A3/A4 under the same feedback.
 - **E6 Evolution (Phase 5).** Imitation dynamics × regime × audit → long-run prevalence of strategic
-  behaviour. Is sincere donating evolutionarily stable, and under which rules?
+  behaviour. Is sincere donating evolutionarily stable, and under which rules? Keep μ_s = 0.01 and
+  report every prevalence result against two null models, "imitation only" (μ_s = 0) and
+  "mutation only" (r_imit = 0), because mutation drift dominates raw prevalence (M5 review).
 - **E7 Global sensitivity.** Latin hypercube (n ≈ 1000) over the "Explore" ranges + PRCC for
   Gini, E, Π and early-career share (Marino et al. 2008). Sobol indices via SALib as an optional
-  extra.
+  extra. Add to the hypercube (M5 review): the early-career visibility multiplier, θ, μ_s and c_m.
 
 ---
 
