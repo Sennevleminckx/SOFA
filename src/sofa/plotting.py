@@ -565,11 +565,82 @@ def e2_who_pays(df: pd.DataFrame, out: Path) -> list[Path]:
         return _save(fig, out, "E2_who_pays")
 
 
+def e2_feedback(
+    cells: pd.DataFrame, paths: pd.DataFrame, out: Path, phi: float = 1.0
+) -> list[Path]:
+    """Feedback variant: Π relative to 1/(1 − αφ) over time (k = 5) and by k (end of run).
+
+    One row per α. Lines: ω (single-hue ramp, darker = more weight on reputation) under
+    feedback λ > 0; the λ = 0 reference is solved and lies at or below 1 (the bound).
+    """
+    lam = max(cells.lam)
+    omegas = sorted(cells.omega.unique())
+    ramp = dict(zip(omegas, (BLUE_RAMP[1], BLUE_RAMP[3], BLUE_RAMP[4]), strict=False))
+    alphas = sorted(cells.alpha.unique())
+    with mpl.rc_context(STYLE):
+        fig, axes = plt.subplots(len(alphas), 2, figsize=(9.6, 3.3 * len(alphas)), squeeze=False)
+        for row, a in zip(axes, alphas, strict=True):
+            left, right = row
+            for omega in omegas:
+                d = paths[
+                    (paths.alpha == a)
+                    & (paths.omega == omega)
+                    & (paths.lam == lam)
+                    & (paths.k == 5)
+                    & (paths.phi == phi)
+                ]
+                g = d.groupby("year").premium_rel_bound
+                m, lo, hi = g.mean(), g.quantile(0.1), g.quantile(0.9)
+                left.fill_between(m.index, lo, hi, color=ramp[omega], alpha=0.15, lw=0)
+                left.plot(m.index, m, color=ramp[omega], label=f"ω = {omega:g}")
+                c = cells[(cells.alpha == a) & (cells.omega == omega) & (cells.phi == phi)]
+                for lam_, ls in ((lam, "-"), (0.0, ":")):
+                    e = c[c.lam == lam_].groupby("k").premium_rel_bound.mean()
+                    right.plot(
+                        e.index,
+                        e,
+                        color=ramp[omega],
+                        ls=ls,
+                        marker="o",
+                        ms=4,
+                        label=f"ω = {omega:g}" if lam_ == lam else None,
+                    )
+            for ax in row:
+                ax.axhline(1.0, color=INK, lw=1.0, ls="--", zorder=1)
+            left.set(xlabel="Year", ylabel="Π ÷ 1/(1 − αφ)")
+            left.set_title(
+                f"α = {a:g}, k = 5: Π over time (λ = {lam:g}; band = 10–90 % of seeds)",
+                loc="left",
+                fontsize=9,
+            )
+            right.set(xlabel="Cartel size k", xticks=sorted(cells.k.unique()))
+            right.set_title(
+                f"α = {a:g}: evaluation years (solid λ = {lam:g}, dotted λ = 0)",
+                loc="left",
+                fontsize=9,
+            )
+        axes[0, 0].legend(loc="upper left", fontsize=8)
+        fig.suptitle(
+            "E2 feedback variant: cartel premium relative to the static bound "
+            f"(clique, φ = {phi:g}, random members; dashed = bound)",
+            x=0.01,
+            ha="left",
+            fontsize=10,
+        )
+        fig.tight_layout()
+        return _save(fig, out, "E2_feedback")
+
+
 def plot_e2(results: Path) -> list[Path]:
-    """All E2 figures."""
+    """All E2 figures (plus the feedback variant when it was run)."""
     df = _read_with_meta(results / "E2" / "E2_cells.parquet")
     figs = results / "E2" / "figures"
-    return e2_premium_vs_bound(df, figs) + e2_selection(df, figs) + e2_who_pays(df, figs)
+    paths = e2_premium_vs_bound(df, figs) + e2_selection(df, figs) + e2_who_pays(df, figs)
+    fb = results / "E2" / "E2_feedback.parquet"
+    if fb.exists():
+        fp = pd.read_parquet(results / "E2" / "E2_feedback_paths.parquet")
+        paths += e2_feedback(pd.read_parquet(fb), fp, figs)
+    return paths
 
 
 # --- E3 ---------------------------------------------------------------------------------
