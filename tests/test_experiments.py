@@ -50,6 +50,34 @@ def test_e2_runner(tmp_path):
     assert float(_meta(path)["sofa.annual_crosscheck_max_rel_diff"]) < 1e-9
 
 
+def test_e2_feedback_variant(tmp_path):
+    """λ = 0 reproduces the static E2 premium; λ > 0 is simulated and yields yearly paths."""
+    cfg = {
+        "base": BASE.replace(T=30, T_eval=5),
+        "alphas": [0.5],
+        "ks": [5],
+        "phis": [1.0],
+        "topologies": ["clique"],
+        "selections": ["random"],
+        "feedback": {
+            "lams": [0.0, 0.2],
+            "omegas": [0.3],
+            "alphas": [0.5],
+            "ks": [5],
+            "phis": [1.0],
+        },
+    }
+    paths = run_e2(cfg, 1, tmp_path, n_jobs=1)
+    static = pd.read_parquet(paths["cells"]).premium.iloc[0]
+    fb = pd.read_parquet(paths["feedback"]).set_index("lam")
+    assert fb.loc[0.0, "solved"] == 1.0 and fb.loc[0.2, "solved"] == 0.0
+    assert fb.loc[0.0, "premium"] == pytest.approx(static, rel=1e-12)
+    assert fb.loc[0.0, "members_v_ratio"] == 1.0
+    assert fb.loc[0.2, "members_v_ratio"] > 1.0  # the cartel's extra output raises visibility
+    fp = pd.read_parquet(paths["feedback_paths"])
+    assert len(fp) == 2 * 30 and set(fp.year) == set(range(1, 31))
+
+
 def test_e3_runner_routes_static_and_dynamic(tmp_path):
     cfg = {
         "base": BASE.replace(T=30, T_eval=5),

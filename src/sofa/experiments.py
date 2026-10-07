@@ -505,8 +505,75 @@ def _e2_seed(cfg: dict[str, Any], seed: int) -> list[dict]:
     return rows
 
 
+def _K_path(model: SOFAModel) -> np.ndarray:
+    """K for every year (T × N): simulated, or the solved steady state in every year if static."""
+    T = model.p.T
+    if model.is_static():
+        return np.tile(model.equilibrium()[1], (T, 1))
+    model.p.check_horizon()
+    path = np.empty((T, model.N))
+    for t in range(T):
+        model.step()
+        path[t] = model.K
+    return path
+
+
+def _e2_feedback_seed(cfg: dict[str, Any], seed: int) -> tuple[list[dict], list[dict]]:
+    """E2 feedback variant for one seed: (cell summaries, premium by year).
+
+    One clique of random members per k (CRN across α, ω, λ and φ). Π compares the members'
+    K with the same seed without the cartel, year by year and over the evaluation years.
+    ``members_v_ratio`` is the members' final mean visibility with the cartel divided by
+    that without it: the channel by which feedback lifts Π above the bound (§2.3.5).
+    """
+    p: Params = cfg["base"]
+    fb = cfg["feedback"]
+    world = build_world(p, RNGStreams(seed))
+    roles = {}
+    for k in fb["ks"]:
+        pk = p.replace(cartels=True, k=k, topology="clique", cartel_selection="random")
+        roles[k] = assign_roles(world.pop, pk, RNGStreams(seed))
+    ev = slice(p.T - p.T_eval, p.T)
+    cells, paths = [], []
+    for alpha in fb["alphas"]:
+        for omega in fb["omegas"]:
+            for lam in fb["lams"]:
+                p0 = p.replace(alpha=alpha, omega=omega, lam=lam)
+                m0 = SOFAModel(p0, seed=seed, world=world)
+                K0 = _K_path(m0)
+                for k in fb["ks"]:
+                    C = roles[k].cartels[0]
+                    for phi in fb["phis"]:
+                        pc = p0.replace(cartels=True, k=k, phi=phi, topology="clique")
+                        m1 = SOFAModel(pc, seed=seed, world=world, roles=roles[k])
+                        K1 = _K_path(m1)
+                        bound = metrics.premium_bound(alpha, phi)
+                        prem_t = K1[:, C].sum(axis=1) / K0[:, C].sum(axis=1)
+                        label = dict(seed=seed, alpha=alpha, omega=omega, lam=lam, k=k, phi=phi)
+                        premium = float(K1[ev][:, C].sum() / K0[ev][:, C].sum())
+                        cells.append(
+                            dict(
+                                label,
+                                premium=premium,
+                                bound=bound,
+                                premium_rel_bound=premium / bound,
+                                members_v_ratio=float(m1.v[C].mean() / m0.v[C].mean()),
+                                solved=float(m1.is_static()),
+                            )
+                        )
+                        paths.extend(
+                            dict(label, year=t + 1, premium=float(v), premium_rel_bound=v / bound)
+                            for t, v in enumerate(prem_t)
+                        )
+    return cells, paths
+
+
 def run_e2(cfg: dict[str, Any], seeds: int, out: Path, n_jobs: int = -1) -> dict[str, Path]:
-    """Run E2; write ``out/E2/E2_cells.parquet`` with the annual cross-check in metadata."""
+    """Run E2; write ``out/E2/E2_cells.parquet`` with the annual cross-check in metadata.
+
+    With a ``feedback`` section, also run the feedback variant (M6 review) and write
+    ``E2_feedback.parquet`` (cells) and ``E2_feedback_paths.parquet`` (Π by year).
+    """
     t0 = time.perf_counter()
     res = map_seeds(_e2_seed, cfg, seeds, n_jobs)
     df = pd.DataFrame([r for rows in res for r in rows])
@@ -526,7 +593,15 @@ def run_e2(cfg: dict[str, Any], seeds: int, out: Path, n_jobs: int = -1) -> dict
     )
     path = out / "E2" / "E2_cells.parquet"
     write_parquet(df, path, meta)
-    return {"cells": path}
+    paths = {"cells": path}
+    if "feedback" in cfg:
+        t1 = time.perf_counter()
+        res = map_seeds(_e2_feedback_seed, cfg, seeds, n_jobs)
+        fmeta = dict(meta, runtime_s=f"{time.perf_counter() - t1:.1f}", variant="feedback")
+        for i, name in enumerate(("feedback", "feedback_paths")):
+            paths[name] = out / "E2" / f"E2_{name}.parquet"
+            write_parquet(pd.DataFrame([r for parts in res for r in parts[i]]), paths[name], fmeta)
+    return paths
 
 
 # --- E3: transparency (§7) --------------------------------------------------------------

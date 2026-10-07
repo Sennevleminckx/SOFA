@@ -100,6 +100,10 @@ These were checked numerically (N = 400, random sparse W) before writing this sp
    outside giving towards recipients who feed the cartel, raising I_C. The full model exceeds the bound
    in 0.3 % of E2 cells, by ≤ 0.8 %. The exact form below always holds; the static-W test of §10 is
    unaffected.
+   **The bound holds only without the reputation feedback loop (M6 review).** With feedback (λ > 0,
+   ω > 0), the cartel's extra funding raises its output, then its visibility, then sincere outsiders'
+   donations, so I_C can rise without limit. E7 finds Π above the bound in 19 % of the hypercube, up to
+   12×; with λ = 0 or ω = 0 the same samples fall back below it.
    This shortfall grows with α and k/N. Numerical check at N = 400, φ = 1: α = 0.5 → Π = 1.996 / 1.975 /
    1.946 for k = 2 / 5 / 10 (prediction 2.00); α = 0.8 → worst-case shortfall 2 % / 7 % / 10 %;
    α = 0.9 → 4 % / 11 % / 19 %.
@@ -405,7 +409,9 @@ Each experiment has a YAML config in `experiments/configs/` and a runner entry p
   cases, group balance, cartel premium and ring results from §2.3.
 - **E1 Mechanics (sincere only).** α × σ_p × ω grid → Gini, E, ρ(K, q). Include A0–A2 for reference.
 - **E2 Cartels.** α ∈ {0.2, 0.35, 0.5, 0.65, 0.8, 0.9} × k ∈ {2, 3, 5, 10, 20} × φ ∈ {0.25, 0.5, 0.75, 1}
-  × topology × selection. Plot Π against 1/(1 − αφ) and show who pays.
+  × topology × selection. Plot Π against 1/(1 − αφ) and show who pays. Feedback variant (M6 review):
+  λ = 0.2 × ω ∈ {0, 0.3, 0.6} for a reduced grid (simulated, because W changes with visibility), with
+  Π over time against the same seed without the cartel.
 - **E3 Transparency.** Regime T0–T3 × share x of herders / reciprocators / cartel members
   ∈ {0, 0.1, 0.25, 0.5} → Gini, E, equity metrics, fallbacks.
 - **E4 Safeguards.** Each of S1–S4 and α, alone and combined, against clique and ring cartels →
@@ -422,6 +428,10 @@ Each experiment has a YAML config in `experiments/configs/` and a runner entry p
 - **E7 Global sensitivity.** Latin hypercube (n ≈ 1000) over the "Explore" ranges + PRCC for
   Gini, E, Π and early-career share (Marino et al. 2008). Sobol indices via SALib as an optional
   extra. Add to the hypercube (M5 review): the early-career visibility multiplier, θ, μ_s and c_m.
+  **Design (M6 review):** three hypercubes, one per model configuration, so that switches forced on in
+  every sample do not condition the others: *mechanics* (sincere SOFA with feedback, one clique for Π,
+  a panel comparator), *safeguards* (static, solved) and *evolution* (the E6 model). Sobol indices are
+  not computed (M6 review: cost about 50 hours for the mechanics block; PRCC suffices).
 
 ---
 

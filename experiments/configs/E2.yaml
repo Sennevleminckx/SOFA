@@ -11,3 +11,12 @@ phis: [0.25, 0.5, 0.75, 1.0]
 topologies: [clique, ring, star]
 selections: [random, same_field, low_q, high_q]
 seeds: 50
+# Feedback variant (M6 review): reputation feedback lets the cartel's extra funding raise its
+# visibility, and with ω > 0 that raises sincere outsiders' donations to it, which the §2.3.5
+# bound excludes. Clique, random members; λ = 0 cells are static and solved, λ > 0 simulated.
+feedback:
+  lams: [0.0, 0.2]
+  omegas: [0.0, 0.3, 0.6]
+  alphas: [0.5, 0.8]
+  ks: [2, 5, 10]
+  phis: [0.5, 1.0]
