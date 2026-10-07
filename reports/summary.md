@@ -35,10 +35,12 @@ Small fields lose 8–16 % of their share, because their members must give outsi
 the whole relative premium. High-quality cartels gain most in absolute terms. The cost falls on
 high-quality non-members (the top quality decile bears 55 % of outsiders' loss at α = 0.8).
 
-**6. With reputation feedback, collusion compounds** (E7, new in M6). When funding raises
-visibility and visibility guides donors (λ, ω > 0), a cartel's extra money becomes reputation that
-attracts sincere donations. The premium then exceeds 1/(1 − αφ) in 19 % of the parameter space, up to
-12×. Without the feedback loop the bound holds.
+**6. With reputation feedback, collusion compounds** (E7, E2 feedback variant; new in M6).
+When funding raises visibility and visibility guides donors (λ, ω > 0), a cartel's extra money
+becomes reputation that attracts sincere donations. At α = 0.8 a 5-member clique ends with 9.6× its
+counterfactual funding instead of the static bound of 5 (ω = 0.6, λ = 0.2). Across the parameter
+space the premium exceeds the bound in 19 % of cases. The effect needs both parts of the loop: with
+λ = 0 or ω = 0 the bound holds. It builds over 6–13 years. No flow-based safeguard can see it.
 
 **7. Safeguards: one rule per shape, none for all** (E4, E7).
 - A **per-recipient cap** (c = 0.1) removes 95 % of a ring's premium at no collateral cost, but
