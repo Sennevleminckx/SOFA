@@ -41,14 +41,13 @@ mechanism design; transparency
 
 # 1 Introduction
 
-<!-- Items marked [check] need the source PDF before submission. -->
-
 ## 1.1 The cost and noise of competitive funding
 
 Most public research money is allocated by competition. Researchers write proposals, peers review
-them, and a panel ranks them. This process is expensive. In one Australian funding round,
-applicants spent an estimated 34 working days on each proposal, and about one in five proposals
-was funded [Herbert et al. 2013; check figures]. Contest models suggest that, at low success
+them, and a panel ranks them. This process is expensive. In the 2012 round of Australian NHMRC
+Project Grants, a proposal took on average 34 working days of researcher time. The 3727
+proposals took an estimated 550 working years, or AU$66 million in salary costs, and 21 % were
+funded [Herbert et al. 2013]. More time spent on a proposal did not raise its chance of success. Contest models suggest that, at low success
 rates, a large part of the value of a grant programme can be spent on the competition itself
 [Gross & Bergstrom 2019].
 
@@ -69,8 +68,9 @@ researchers in the Netherlands, the United Kingdom and the United States keep cu
 levels, with a moderate to considerable budget left for other costs. The second keeps review but
 uses chance where review cannot separate proposals [Fang & Casadevall 2016]. The Health Research
 Council of New Zealand was the first major government funder to use a lottery, for its Explorer
-Grants [Liu et al. 2020]. The Swiss National Science Foundation tested random selection near the
-funding line from 2018 to 2020 and then allowed it in all its schemes [Heyard et al. 2022; check].
+Grants [Liu et al. 2020]. The Volkswagen Foundation and the Austrian Science Fund have also used
+lotteries, and the Swiss National Science Foundation introduced one for proposals near the funding
+line in its junior fellowship scheme [Heyard et al. 2022].
 
 The third kind moves the judgement from a panel to the community. In distributed peer review,
 applicants rank each other's proposals [Merrifield & Saari 2009; Kurokawa et al. 2015].
@@ -93,8 +93,9 @@ elite captured a large share of the money.
 
 These studies share one assumption. Donors are honest by construction: a citation is taken as
 an honest signal of value. In a real SOFA scheme, donations are money, and donors know that money
-they give can come back to them. When a measure becomes a target, people change their behaviour to
-meet it [Campbell 1979; Goodhart 1975; check]. Science offers examples. Groups of authors cite each
+they give can come back to them. Campbell [1979] stated the general risk: the more a quantitative
+indicator is used for social decisions, the more it is subject to corruption pressures, and the
+more it distorts the processes it is meant to monitor. Science offers examples. Groups of authors cite each
 other to raise their indicators [Fister et al. 2016]. Authors have reviewed their own papers under
 false reviewer identities [Ferguson et al. 2014]. Incentives can also select poor practices without
 any deliberate cheating, because the practices that pay are the ones that spread
@@ -107,9 +108,8 @@ SOFA has a close formal relative. With fixed donations, its steady state is a Ka
 centrality of the donation graph [Katz 1953], the same family as PageRank [Page et al. 1999].
 Collusion in such rankings is well studied. Web pages can be linked in "spam farms" whose structure
 maximises their rank, and alliances of farms can raise the rank of every member
-[Gyöngyi & Garcia-Molina 2005]. Zhang et al. [2004] showed that colluding groups can gain
-substantially in eigenvector-based reputation systems and proposed changes to limit the gain
-[check the form of their bound]. In SOFA the pass-on fraction plays the role of PageRank's damping
+[Gyöngyi & Garcia-Molina 2005]. Zhang et al. [2004] studied collusion in eigenvector-based reputation
+systems and proposed changes to make them more robust. In SOFA the pass-on fraction plays the role of PageRank's damping
 factor. Other peer-to-peer funding schemes face the same problem. The designers of quadratic
 funding, for example, discuss variants that protect against collusion
 [Buterin et al. 2019].
@@ -128,10 +128,16 @@ funding systems are hard to run. Feliciani et al. [2019] reviewed 46 simulation 
 review. They found many models with incompatible assumptions, few comparisons between models and
 few empirical tests. In this journal, Squazzoni and Takács [2011] argued that peer review is a
 problem of social interaction, and Squazzoni and Gandelli [2013] modelled how reciprocity among
-referees affects the quality of review. Other models have studied competition for grants and the
-behaviour of applicants and reviewers [Thurner & Hanel 2011; Roebber & Schultz 2011;
-Höylä et al. 2016; Bianchi et al. 2018; check scope of each]. To our knowledge, no published model
-has studied SOFA with donors who respond to the incentives that SOFA itself creates.
+referees affects the quality of review. Bianchi et al. [2018] treated journal peer review as a cooperation
+dilemma and found that a moderate level of competition supports review quality when referees
+review for reciprocity. Thurner and Hanel [2011] showed that a small share of selfish referees,
+who have no interest in promoting good work other than their own, can lower the quality of
+accepted work to the level of chance, and that mutual support networks of authors and referees
+make it worse. For funding, Höylä et al. [2016] simulated four allocation strategies (equal
+shares, lottery, a realistic panel and an ideal panel) and found strong effects on researchers'
+careers. These models study strategic behaviour in review and the effect of allocation rules.
+They do not study a peer-to-peer allocation rule, in which the reviewers are also the funders. To our knowledge, no published model has studied SOFA with donors who respond to the incentives
+that SOFA itself creates.
 
 ## 1.6 This study
 
@@ -751,7 +757,9 @@ reproduced with `python -m sofa.experiments run E<x> --seeds 50 --n 500`.
 - Alon N, Fischer F, Procaccia A, Tennenholtz M (2011). Sum of us: strategyproof selection from the
   selectors. *TARK 2011*.
 - Aziz H, Lev O, Mattei N, Rosenschein JS, Walsh T (2016). Strategyproof peer selection. *AAAI 2016*.
-- Bianchi F, Grimaldo F, Bravo G, Squazzoni F (2018). The peer review game. *Scientometrics* 116.
+- Bianchi F, Grimaldo F, Bravo G, Squazzoni F (2018). The peer review game: an agent-based model
+  of scientists facing resource constraints and institutional pressures. *Scientometrics*
+  116:1401–1420.
 - Bol T, de Vaan M, van de Rijt A (2018). The Matthew effect in science funding. *PNAS*
   115(19):4887–4890.
 - Bollen J (2018). Who would you share your funding with? *Nature* 560:143.
@@ -763,7 +771,7 @@ reproduced with `python -m sofa.experiments run E<x> --seeds 50 --n 500`.
 - Buterin V, Hitzig Z, Weyl EG (2019). A flexible design for funding public goods. *Management
   Science* 65(11):5171–5187.
 - Campbell DT (1979). Assessing the impact of planned social change. *Evaluation and Program
-  Planning* 2(1):67–90. [check]
+  Planning* 2(1):67–90.
 - Edmonds B et al. (2019). Different modelling purposes. *JASSS* 22(3):6.
 - Fang FC, Casadevall A (2016). Research funding: the case for a modified lottery. *mBio* 7(2).
 - Feliciani T, Luo J, Ma L, Lucas P, Squazzoni F, Marušić A, Shankar K (2019). A scoping review of
@@ -771,22 +779,20 @@ reproduced with `python -m sofa.experiments run E<x> --seeds 50 --n 500`.
 - Ferguson C, Marcus A, Oransky I (2014). Publishing: the peer-review scam. *Nature* 515.
 - Fister I Jr, Fister I, Perc M (2016). Toward the discovery of citation cartels in citation
   networks. *Frontiers in Physics* 4.
-- Goodhart CAE (1975). Problems of monetary management: the U.K. experience. *Papers in Monetary
-  Economics*, Reserve Bank of Australia. [check]
 - Graves N, Barnett AG, Clarke P (2011). Funding grant proposals for scientific research: retrospective
   analysis of scores by members of grant review panel. *BMJ* 343.
 - Grimm V et al. (2020). The ODD protocol … second update. *JASSS* 23(2):7.
 - Gross K, Bergstrom CT (2019). Contest models highlight inherent inefficiencies of scientific
   funding competitions. *PLoS Biology* 17(1):e3000065.
 - Gyöngyi Z, Garcia-Molina H (2005). Link spam alliances. *VLDB 2005*, 517–528.
-- Herbert DL, Barnett AG, Clarke P, Graves N (2013). On the time spent preparing grant proposals.
-  *BMJ Open* 3:e002800.
+- Herbert DL, Barnett AG, Clarke P, Graves N (2013). On the time spent preparing grant proposals:
+  an observational study of Australian researchers. *BMJ Open* 3:e002800.
 - Heyard R, Ott M, Salanti G, Egger M (2022). Rethinking the funding line at the Swiss National
-  Science Foundation: Bayesian ranking and lottery. *Statistics and Public Policy* 9(1).
+  Science Foundation: Bayesian ranking and lottery. *Statistics and Public Policy* 9(1):110–121.
 - Holzman R, Moulin H (2013). Impartial nominations for a prize. *Econometrica* 81(1):173–196.
 - Huang D-W (2018). Optimal distribution of science funding. *Physica A* 502:613–618.
-- Höylä T, Bartneck C, Timonen T (2016). The consequences of competition: simulating the effects of
-  research grant allocation strategies. *Scientometrics* 108.
+- Höylä T, Bartneck C, Tiihonen T (2016). The consequences of competition: simulating the effects
+  of research grant allocation strategies. *Scientometrics* 108:263–288.
 - Katz L (1953). A new status index derived from sociometric analysis. *Psychometrika* 18(1).
 - Kurokawa D, Lev O, Morgenstern J, Procaccia AD (2015). Impartial peer review. *IJCAI 2015*, 582–588.
 - Liu M et al. (2020). The acceptability of using a lottery to allocate research funding. *Research
@@ -798,14 +804,14 @@ reproduced with `python -m sofa.experiments run E<x> --seeds 50 --n 500`.
 - Page L, Brin S, Motwani R, Winograd T (1999). The PageRank citation ranking. Stanford InfoLab.
 - Pier EL et al. (2018). Low agreement among reviewers evaluating the same NIH grant applications.
   *PNAS* 115(12):2952–2957.
-- Roebber PJ, Schultz DM (2011). Peer review, program officers and science funding. *PLoS ONE* 6(4).
 - Smaldino PE, McElreath R (2016). The natural selection of bad science. *Royal Society Open
   Science* 3:160384.
 - Squazzoni F, Gandelli C (2013). Opening the black-box of peer review: an agent-based model of
   scientist behaviour. *JASSS* 16(2):3.
 - Squazzoni F, Takács K (2011). Social simulation that "peers into peer review". *JASSS* 14(4):3.
 - Szabó G, Tőke C (1998). Evolutionary prisoner's dilemma game on a square lattice. *Phys Rev E* 58:69.
-- Thurner S, Hanel R (2011). Peer-review in a world with rational scientists. *Eur Phys J B* 84.
+- Thurner S, Hanel R (2011). Peer-review in a world with rational scientists: toward selection of
+  the average. *Eur Phys J B* 84:707–711.
 - Vaesen K, Katzav J (2017). How much would each researcher receive if competitive government
   research funding were distributed equally among researchers? *PLoS ONE* 12(9).
 - Zhang H, Goel A, Govindan R, Mason K, Van Roy B (2004). Making eigenvector-based reputation systems
@@ -813,6 +819,7 @@ reproduced with `python -m sofa.experiments run E<x> --seeds 50 --n 500`.
 
 Candidates for the Discussion (not yet cited):
 
+- Roebber PJ, Schultz DM (2011). Peer review, program officers and science funding. *PLoS ONE* 6(4).
 - Avin S (2019). Mavericks and lotteries. *Studies in History and Philosophy of Science A* 76:13–23.
 - Bornmann L (2011). Scientific peer review. *Annual Review of Information Science and Technology* 45.
 - Cheng A, Friedman E (2005). Sybilproof reputation mechanisms. *P2PECON 2005*.
