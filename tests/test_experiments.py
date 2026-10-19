@@ -170,6 +170,29 @@ def test_e6_runner(tmp_path):
     assert set(cells[cells.audit == "T3 peer reports"].regime) == {"T3"}
     assert len(traj) == len(cells) * 12
     assert {"founded", "ended", "censored"} <= set(logs.columns)
+    assert set(cells.lam) == {0.0}  # no feedback entry: the original design
+
+
+def test_e6_feedback_variant(tmp_path):
+    """Each feedback entry repeats the grid; λ = 0 cells match the run without the variant."""
+    from sofa.experiments import run_e6
+
+    base = BASE.replace(T=12, T_eval=4, adaptation=True, cartels=True, x_C=0.05, x_herd=0.05)
+    cfg = {
+        "base": base,
+        "regimes": ["T1"],
+        "audits": {"none": {}},
+        "c_ms": [0.05],
+        "trajectory_metrics": ["share_sincere"],
+    }
+    plain = pd.read_parquet(run_e6(cfg, 1, tmp_path / "a", n_jobs=1)["cells"])
+    cfg["feedback"] = [{"lam": 0.0, "omega": base.omega}, {"lam": 0.2, "omega": base.omega}]
+    fb = pd.read_parquet(run_e6(cfg, 1, tmp_path / "b", n_jobs=1)["cells"])
+    assert len(fb) == 2 * len(plain)
+    off = fb[fb.lam == 0.0].reset_index(drop=True)
+    pd.testing.assert_frame_equal(off, plain, check_like=True)
+    on = fb[fb.lam == 0.2].reset_index(drop=True)
+    assert not np.allclose(on.output_vs_equal, plain.output_vs_equal)
 
 
 def test_e7_runner(tmp_path):

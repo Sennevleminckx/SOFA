@@ -1419,17 +1419,93 @@ def e6_summary(cells: pd.DataFrame, out: Path) -> list[Path]:
         return _save(fig, out, "E6_summary")
 
 
+FEEDBACK_STYLE = {  # (λ, ω) → colour, marker, label; sequential within ω, fixed order
+    (0.0, 0.3): ("#6da7ec", "o", "λ = 0, ω = 0.3 (original E6)"),
+    (0.2, 0.3): ("#256abf", "s", "λ = 0.2, ω = 0.3"),
+    (0.0, 0.6): ("#b9a4d6", "^", "λ = 0, ω = 0.6"),
+    (0.2, 0.6): ("#5b3a99", "D", "λ = 0.2, ω = 0.6"),
+}
+
+
+def _original_e6(df: pd.DataFrame) -> pd.DataFrame:
+    """Rows of the original E6 design (λ = 0, ω = 0.3) when the feedback variant is present."""
+    if "lam" not in df:
+        return df
+    out = df[np.isclose(df.lam, 0.0) & np.isclose(df.omega, 0.3)].copy()
+    out.attrs = df.attrs
+    return out
+
+
+def e6_feedback(cells: pd.DataFrame, out: Path) -> list[Path]:
+    """Feedback variant: cartel membership, strategic play and output by regime (no audits)."""
+    if "lam" not in cells or cells.lam.nunique() < 2:
+        return []
+    d = cells[(cells.audit == "none") & (cells.dynamics == "both")].copy()
+    d["strategic_play"] = (
+        1.0 - d.share_sincere - d.share_deferential - d.share_shirker - d.fallbacks / d.N
+    )
+    panels = (
+        ("share_in_cartels", "Share in routing cartels"),
+        ("strategic_play", "Strategic play (actually played)"),
+        ("output_vs_equal", "Output vs equal split (%)"),
+    )
+    regimes = sorted(d.regime.unique())
+    c_ms = sorted(d.c_m.unique())
+    with mpl.rc_context(STYLE):
+        fig, axes = plt.subplots(len(c_ms), 3, figsize=(12, 3.4 * len(c_ms)), squeeze=False)
+        for r, cm in enumerate(c_ms):
+            for c, (col, label) in enumerate(panels):
+                ax = axes[r, c]
+                for j, ((lam, om), (colour, marker, lab)) in enumerate(FEEDBACK_STYLE.items()):
+                    keep = np.isclose(d.c_m, cm) & np.isclose(d.lam, lam)
+                    sub = d[keep & np.isclose(d.omega, om)]
+                    for i, reg in enumerate(regimes):
+                        x = sub[sub.regime == reg][col] * (100 if col == "output_vs_equal" else 1)
+                        if not len(x):
+                            continue
+                        m, lo, hi = _ci95(x)
+                        ax.errorbar(
+                            i + (j - 1.5) * 0.15,
+                            m,
+                            yerr=[[m - lo], [hi - m]],
+                            color=colour,
+                            marker=marker,
+                            ms=4.5,
+                            capsize=2,
+                            lw=1.2,
+                            label=lab if (i == 0 and r == 0 and c == 0) else None,
+                        )
+                ax.set_xticks(range(len(regimes)), regimes)
+                ax.set_title(f"{label}, c_m = {cm:g}", loc="left", fontsize=9)
+                ax.grid(axis="x", visible=False)
+                if r == len(c_ms) - 1:
+                    ax.set_xlabel("Transparency regime")
+        h, lab = axes[0, 0].get_legend_handles_labels()
+        fig.legend(h, lab, loc="lower center", ncol=4, fontsize=7.5, bbox_to_anchor=(0.5, -0.04))
+        fig.suptitle(
+            "E6 with reputation feedback: mean over the last 20 years, no audits "
+            f"(95 % interval over {d.seed.nunique()} seeds)",
+            x=0.01,
+            ha="left",
+            fontsize=10,
+        )
+        fig.tight_layout()
+        return _save(fig, out, "E6_feedback")
+
+
 def plot_e6(results: Path) -> list[Path]:
-    """All E6 figures."""
+    """All E6 figures. The original figures show the λ = 0, ω = 0.3 design only."""
     src = results / "E6"
     tr = pd.read_parquet(src / "E6_trajectories.parquet")
     cells = pd.read_parquet(src / "E6_cells.parquet")
     figs = src / "figures"
+    tr0, cells0 = _original_e6(tr), _original_e6(cells)
     return (
-        e6_prevalence(tr, figs, 0.05)
-        + e6_prevalence(tr, figs, 0.2)
-        + e6_summary(cells, figs)
-        + e6_selection(cells, figs)
+        e6_prevalence(tr0, figs, 0.05)
+        + e6_prevalence(tr0, figs, 0.2)
+        + e6_summary(cells0, figs)
+        + e6_selection(cells0, figs)
+        + e6_feedback(cells, figs)
     )
 
 

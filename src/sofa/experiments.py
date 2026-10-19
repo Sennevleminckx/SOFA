@@ -842,24 +842,30 @@ def e6_cells(cfg: dict[str, Any]) -> list[tuple[dict, dict]]:
     ``dynamics`` = "both" is the full model. Without audits, two null models separate
     selection from drift: "imitation only" (μ_s = 0) and "mutation only" (r_imit = 0,
     which shows where mutation alone would take the population).
+    ``feedback`` (optional) is a list of {lam, omega} overrides; each entry repeats the
+    whole grid. It defaults to the base parameters, which reproduces the original E6.
     """
     nulls = {"imitation only": {"mu_s": 0.0}, "mutation only": {"r_imit": 0.0}}
+    base: Params = cfg["base"]
     out = []
-    for regime in cfg["regimes"]:
-        for audit, overrides in cfg["audits"].items():
-            if "p_peer" in overrides and regime != "T3":
-                continue
-            for c_m in cfg["c_ms"]:
-                variants = {"both": {}}
-                if audit == "none" and cfg.get("null_models", False):
-                    variants.update(nulls)
-                for dyn, extra in variants.items():
-                    out.append(
-                        (
-                            {"regime": regime, "audit": audit, "c_m": c_m, "dynamics": dyn},
-                            {"regime": regime, "c_m": c_m, **overrides, **extra},
+    for fb in cfg.get("feedback", [{}]):
+        fb_label = {"lam": fb.get("lam", base.lam), "omega": fb.get("omega", base.omega)}
+        for regime in cfg["regimes"]:
+            for audit, overrides in cfg["audits"].items():
+                if "p_peer" in overrides and regime != "T3":
+                    continue
+                for c_m in cfg["c_ms"]:
+                    variants = {"both": {}}
+                    if audit == "none" and cfg.get("null_models", False):
+                        variants.update(nulls)
+                    for dyn, extra in variants.items():
+                        label = {"regime": regime, "audit": audit, "c_m": c_m, "dynamics": dyn}
+                        out.append(
+                            (
+                                {**label, **fb_label},
+                                {"regime": regime, "c_m": c_m, **overrides, **extra, **fb},
+                            )
                         )
-                    )
     return out
 
 
@@ -871,7 +877,7 @@ def _e6_seed(cfg: dict[str, Any], seed: int) -> tuple[list[dict], list[dict], li
     cells, paths, logs = [], [], []
     for label, overrides in e6_cells(cfg):
         res = SOFAModel(p.replace(**overrides), seed=seed, world=world).run()
-        cells.append({"seed": seed, **label, **res.summary()})
+        cells.append({"seed": seed, "N": p.N, **label, **res.summary()})
         cols = ["year", *[k for k in keep if k in res.yearly]]
         paths.extend({"seed": seed, **label, **r} for r in res.yearly[cols].to_dict("records"))
         logs.extend({"seed": seed, **label, **r} for r in res.cartel_log)

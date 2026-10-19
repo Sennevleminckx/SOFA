@@ -29,4 +29,13 @@ trajectory_metrics: [share_sincere, share_herder, share_reciprocator, share_cart
                      share_shirker, share_best_responder, share_in_cartels, n_cartels,
                      cartel_size_mean, output_vs_equal, gini, early_ratio, fallbacks,
                      sanctions_total]
+# Feedback variant (paper revision): reputation feedback lets a cartel's extra funding raise
+# its visibility and so honest outsiders' donations (E2 feedback variant), which may change
+# how far collusion spreads under imitation. Each entry repeats the whole grid; λ = 0 entries
+# are the original E6 (ω = 0.3) and its ω = 0.6 control.
+feedback:
+  - {lam: 0.0, omega: 0.3}
+  - {lam: 0.2, omega: 0.3}
+  - {lam: 0.0, omega: 0.6}
+  - {lam: 0.2, omega: 0.6}
 seeds: 50
