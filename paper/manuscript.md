@@ -386,6 +386,7 @@ headline result.
 | E4 | Safeguards | S1–S4 and α, alone and combined, against cliques (k = 5, 11, 20) and rings (k = 3, 5) | solved |
 | E5 | Feedback, equity, reference allocations | λ × ω × turnover × r_A × mechanism | simulated |
 | E6 | Evolution | regime × audit × c_m, from 80 % honest, with two null models | simulated |
+| E6-fb | Evolution with feedback | E6 × λ ∈ {0, 0.2} × ω ∈ {0.3, 0.6} | simulated |
 | E7 | Global sensitivity | three Latin hypercubes of 1000 samples; PRCC | both |
 
 ## 3.2 Solved and simulated cells
@@ -665,7 +666,35 @@ strategic play (PRCC +0.83) and cartel membership (+0.88). Median strategic play
 cost (−0.55) and the mutation rate (+0.29) followed. The same α that makes honest SOFA informative
 also makes collusion pay, and this now holds for behaviour as well as for a fixed cartel.
 
-## 4.6 What gaming costs in output
+## 4.6 Collusion under imitation with reputation feedback
+
+We repeated E6 with reputation feedback on (λ = 0.2) at two reputation weights (ω = 0.3 and 0.6).
+Each feedback cell was compared with the same seed and the same ω without feedback (Figure 7).
+
+Feedback made collusion spread a little further. With a moral cost of 0.05·B and no audits,
+averaged over the four regimes, the share in routing cartels rose by 1.6 percentage points (95 %
+interval 0.7–2.4) at ω = 0.3 and by 3.1 points (2.3–3.9) at ω = 0.6. With a moral cost of 0.2·B
+the rise was 0.2 points (−0.1 to 0.6) and 1.0 point (0.6–1.3). The null model with imitation only
+gave the same picture: at c_m = 0.05, cartel membership rose by 1.3–2.1 points in every regime,
+and the honest share fell by 0.8–3.3 points. Shirking rose slightly under T0 and T1 (at most 1
+point). The ordering of the regimes did not change: strategic play still rose from T0 to T3.
+
+Output relative to equal split rose with feedback, by 0.5–1.7 percentage points. Feedback also
+helps honest donors, because visibility then follows output. In E5, honest SOFA at ω = 0.3 gained
++8.2 % over equal split with feedback against +7.3 % without. Gamed SOFA under a full ledger
+(T3, c_m = 0.05, no audits) reached +5.6 % with feedback. The gap to honest SOFA was therefore
+about 2.6 percentage points with feedback and 2.2 points without. This comparison combines two
+experiments with different horizons and is approximate.
+
+> **Figure 7.** E6 with and without reputation feedback: share in routing cartels, strategic play
+> and output relative to equal split, by regime and moral cost (no audits).
+> `../reports/figures/E6_feedback.png`
+
+The effect was smaller than the compounding of Section 4.3 might suggest. E6 fixes α at 0.5, where
+feedback raised a fixed cartel's premium by only 2–16 % above the static bound (Table 5). The large
+excess in Table 5 arose at α = 0.8. We did not test evolution with feedback at high α.
+
+## 4.7 What gaming costs in output
 
 At the default α = 0.5, the output cost of strategic behaviour was modest. In E6, output relative to
 equal split ranged from +5.1 % (T3, c_m = 0.05, no audits) to +8.1 % (T3, c_m = 0.2, audits),
@@ -677,10 +706,11 @@ also where honest SOFA is most informative per unit of money passed on.
 
 These figures leave out two costs. First, the who-pays result (Section 4.2) means that gaming
 reallocates money away from the best researchers, which an aggregate output measure with
-θ = 0.5 under-weights. Second, the evolution experiments ran without reputation feedback, so they
-miss the compounding of Section 4.3.
+θ = 0.5 under-weights. Second, with reputation feedback at α = 0.5 the gap to honest SOFA widened
+only slightly (Section 4.6), but the compounding of Section 4.3 is much stronger at high α, where
+we did not test evolution with feedback.
 
-## 4.7 Which parameters decide the outcome
+## 4.8 Which parameters decide the outcome
 
 Across the three hypercubes, four groups of parameters decided the results:
 
@@ -729,7 +759,8 @@ None of these is known from data for any real research community.
 - Behavioural rules (shirking, imitation, moral cost) are assumptions; the shirking rule is our
   construction.
 - Panels and lotteries are simplified and honest.
-- Evolution experiments exclude feedback and turnover; cartels with turnover are not modelled.
+- Evolution experiments fix α = 0.5 and exclude turnover; evolution with feedback was tested only
+  at α = 0.5. Cartels with turnover are not modelled.
 - PRCC misses non-monotone and interaction effects (efficiency against α; S4 against rings).
 - Output with θ = 0.5 is an assumed production function.
 

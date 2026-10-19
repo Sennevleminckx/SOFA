@@ -425,6 +425,8 @@ Each experiment has a YAML config in `experiments/configs/` and a runner entry p
   behaviour. Is sincere donating evolutionarily stable, and under which rules? Keep μ_s = 0.01 and
   report every prevalence result against two null models, "imitation only" (μ_s = 0) and
   "mutation only" (r_imit = 0), because mutation drift dominates raw prevalence (M5 review).
+  Feedback variant (paper revision): the full grid repeated for λ ∈ {0, 0.2} × ω ∈ {0.3, 0.6}
+  (`feedback` key in `E6.yaml`; λ = 0, ω = 0.3 is the original design).
 - **E7 Global sensitivity.** Latin hypercube (n ≈ 1000) over the "Explore" ranges + PRCC for
   Gini, E, Π and early-career share (Marino et al. 2008). Sobol indices via SALib as an optional
   extra. Add to the hypercube (M5 review): the early-career visibility multiplier, θ, μ_s and c_m.
