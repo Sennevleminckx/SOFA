@@ -23,7 +23,8 @@ evaluations used citations in place of donations, so donors were honest by const
 a toy agent-based model to ask what happens when donors respond to incentives and information.
 With fixed donations, the model has closed-form results. Funding is a Katz-type centrality of the
 donation graph, and a cartel that routes a share φ of its donations internally multiplies its
-funding by at most 1/(1 − αφ), whatever its quality. The simulations add four results. First,
+funding by at most 1/(1 − αφ), whatever its quality. With φ = 1 this is a known bound for
+collusion in PageRank. The simulations add four results. First,
 honest SOFA raised expected output above an equal split only when returns to funding and the spread
 of quality were large; it beat equal split in 70 % of the sampled parameter space. Second, the
 cost of a cartel fell mostly on the best non-members. Third, with a reputation feedback loop, a
@@ -108,11 +109,15 @@ SOFA has a close formal relative. With fixed donations, its steady state is a Ka
 centrality of the donation graph [Katz 1953], the same family as PageRank [Page et al. 1999].
 Collusion in such rankings is well studied. Web pages can be linked in "spam farms" whose structure
 maximises their rank, and alliances of farms can raise the rank of every member
-[Gyöngyi & Garcia-Molina 2005]. Zhang et al. [2004] studied collusion in eigenvector-based reputation
-systems and proposed changes to make them more robust. In SOFA the pass-on fraction plays the role of PageRank's damping
-factor. Other peer-to-peer funding schemes face the same problem. The designers of quadratic
-funding, for example, discuss variants that protect against collusion
-[Buterin et al. 2019].
+[Gyöngyi & Garcia-Molina 2005]. Zhang et al. [2004] proved that a colluding group can raise its
+PageRank weight by at most a factor 1/ε, where ε is the reset probability of the random walk. In
+experiments on web and blog graphs, colluding pairs came close to this bound. Zhang et al. also
+showed that finding the group with the largest gain is NP-hard, and that the return-time statistics
+of single nodes can fail to separate colluders from honest nodes. Their remedy raised the reset
+probability for nodes whose weight was unusually sensitive to it. In SOFA the share that each
+researcher keeps, 1 − α, plays the role of ε. Other peer-to-peer funding schemes face the same
+problem. The designers of quadratic funding, for example, discuss variants that protect against
+collusion [Buterin et al. 2019].
 
 Mechanism design asks a related question: can a group select its best members when every member
 is also a candidate? An award rule is impartial if no member's report can change whether that
@@ -163,7 +168,9 @@ We asked six questions:
 6. How does SOFA compare with equal split and with an ideal allocation, at the same budget?
 
 The paper makes three contributions. First, it gives closed-form results for SOFA with fixed
-donations and uses them to verify the simulation. Second, it shows that the parameter that makes
+donations. They extend the collusion bound of Zhang et al. [2004] to cartels that route only part
+of their donations, give an exact identity for the cartel's funding, and serve to verify the
+simulation. Second, it shows that the parameter that makes
 SOFA informative, the pass-on fraction, also sets the gain from collusion. This holds for the spread
 of strategic behaviour as well as for a fixed cartel. Third, it shows that each safeguard we tested
 blocks one cartel shape and misses another, and that reputation feedback creates a channel for
@@ -216,7 +223,10 @@ If the inflow from outsiders does not rise, the cartel's premium over its counte
 
 $$\Pi = \frac{\sum_{i\in C} K_i(\text{cartel})}{\sum_{i\in C} K_i(\text{no cartel})} \le \frac{1}{1-\alpha\varphi}. \tag{4}$$
 
-The bound does not depend on the members' quality. It is reached as k/N → 0. At α = 0.5 and
+The bound does not depend on the members' quality. It is reached as k/N → 0. With φ = 1 it is the
+PageRank bound 1/ε of Zhang et al. [2004], with the kept share 1 − α in the place of the reset
+probability ε. Equation 3 corresponds to their amplification factor, which compares a group's
+total weight with the weight that flows into it. At α = 0.5 and
 φ = 1 a cartel can double its funding; at α = 0.9 it can multiply it by ten. A ring cartel
 (i₁ → i₂ → … → i_k → i₁) has zero pairwise mutual flow but obtains the same premium as a clique.
 A per-recipient cap c limits the internal share to φ_max = min(1, (k − 1)c), so a clique with
@@ -748,6 +758,13 @@ None of these is known from data for any real research community.
   detection; peer reporting under a full ledger was the strongest measure in the model.
 - The reputation channel needs its own safeguard (for example, normalising visibility by funding
   received). Not tested.
+- A targeted α: the analogue of the adaptive-ε rule of Zhang et al. [2004] would lower the pass-on
+  fraction only for donors whose receipts are unusually sensitive to α. Lowering α for everyone
+  removed 75 % of every cartel's excess premium but cost 0.20 in E (Table 6); a targeted rule might
+  keep most of that gain at a lower cost. Not tested.
+- Our cartels do not hide. Zhang et al. [2004] show that detecting colluding groups is NP-hard and
+  that return statistics can be disguised, so the success of cycle-based rules against our rings is
+  an upper bound on what such rules can do.
 
 **5.4 Relation to the literature**
 - Link to collusion in PageRank-type systems, quadratic funding, impartial peer selection.
@@ -846,7 +863,7 @@ reproduced with `python -m sofa.experiments run E<x> --seeds 50 --n 500`.
 - Vaesen K, Katzav J (2017). How much would each researcher receive if competitive government
   research funding were distributed equally among researchers? *PLoS ONE* 12(9).
 - Zhang H, Goel A, Govindan R, Mason K, Van Roy B (2004). Making eigenvector-based reputation systems
-  robust to collusion. *WAW 2004*, LNCS 3243.
+  robust to collusion. *Algorithms and Models for the Web-Graph (WAW 2004)*, LNCS 3243:92–104.
 
 Candidates for the Discussion (not yet cited):
 
