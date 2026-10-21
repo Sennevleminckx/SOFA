@@ -62,13 +62,16 @@ Among applicants for an early-career grant in the Netherlands, those just above 
 received more than twice as much further funding over eight years as those just below it (Bol et al.
 2018), a pattern that Merton (1968) called the Matthew effect.
 
-These costs are now rising. Generative language models make proposals cheaper to write, while
-reviewing them takes as much expert time as before. In 2025 the NIH limited each principal
-investigator to six applications per calendar year and stated that applications substantially
-written by artificial intelligence would not count as original work (NIH 2025 [check]). A system in
-which writing is cheap and reviewing is costly cannot grow with the number of applications, so
-funders have a practical reason to look again at ways of allocating money that need fewer proposals
-or none.
+These costs are now rising. The 2026 call for Marie Skłodowska-Curie postdoctoral fellowships
+received 21,627 proposals, 27 % more than in 2025, for a budget that funds about 1,600 projects
+(Weyn 2026 [replace with the primary source]). Generative language models are a plausible cause,
+because they make proposals cheaper to write while reviewing them takes as much expert time as
+before, although the rise has not been attributed to them directly. In 2025 the NIH limited each
+principal investigator to six applications per calendar year and stated that applications
+substantially written by artificial intelligence would not count as original work (NIH 2025
+[check]). A system in which writing is cheap and reviewing is costly cannot grow with the number of
+applications, so funders have a practical reason to look again at ways of allocating money that need
+fewer proposals or none (Weyn 2026).
 
 Two such alternatives are already in use. Equal base funding gives every qualified researcher the
 same unconditional amount. Vaesen and Katzav (2017) estimated that an equal division of competitive
@@ -76,9 +79,7 @@ funds would let researchers in the Netherlands, the United Kingdom and the Unite
 current staffing levels and still leave a moderate to considerable budget for other costs. Partial
 lotteries keep peer review for a first selection and then draw the winners at random from proposals
 that review cannot separate (Fang & Casadevall 2016). Several funders now use them, from the Health Research Council
-of New Zealand (Liu et al. 2020) to the Swiss National Science Foundation (Heyard et al. 2022), and
-UK Research and Innovation made partial randomisation an optional part of assessment in 2025
-(Research Professional News 2025 [check]). Both alternatives reduce the cost of review, but
+of New Zealand (Liu et al. 2020) to the Swiss National Science Foundation (Heyard et al. 2022). Both alternatives reduce the cost of review, but
 both also give up some or all of the judgement that peers bring.
 
 Self-Organised Funding Allocation (SOFA) keeps peer judgement and removes proposals (Bollen et al.
@@ -919,9 +920,6 @@ Pier, E. L., Brauer, M., Filut, A., Kaatz, A., Raclaw, J., Nathan, M. J., Ford, 
 (2018). Low agreement among reviewers evaluating the same NIH grant applications. *Proceedings of
 the National Academy of Sciences*, 115(12), 2952–2957.
 
-Research Professional News (2025). UKRI urged to be 'transparent' after adopting grant lotteries.
-[check date, author and whether a primary UKRI source exists]
-
 Smaldino, P. E. & McElreath, R. (2016). The natural selection of bad science. *Royal Society Open
 Science*, 3(9), 160384.
 
@@ -939,6 +937,10 @@ the average. *The European Physical Journal B*, 84(4), 707–711.
 
 Vaesen, K. & Katzav, J. (2017). How much would each researcher receive if competitive government
 research funding were distributed equally among researchers? *PLoS ONE*, 12(9), e0183967.
+
+Weyn, M. (2026). By 2035, our current research system will be completely obsolete! Blog post,
+22 September 2026. https://maartenweyn.substack.com/p/by-2035-our-current-research-system
+[grey literature; replace the MSCA figures with the primary source]
 
 Zhang, H., Goel, A., Govindan, R., Mason, K. & Van Roy, B. (2004). Making eigenvector-based
 reputation systems robust to collusion. In S. Leonardi (Ed.), *Algorithms and Models for the
