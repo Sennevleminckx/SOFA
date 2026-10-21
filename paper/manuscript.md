@@ -767,6 +767,19 @@ been measured for a real research community.
 
 > **[PLACEHOLDER: to be written.]** Points to cover:
 
+**Opening: the question this paper answers**
+- Weyn (2026) lists SOFA among the alternatives to proposal-based funding and asks "whether there
+  will be any unintended consequences arising from incentives to pass money to others". Open the
+  Discussion with this question and answer it in the model's terms: yes, and they are specific.
+  - Collusion pays up to 1/(1 − αφ), whatever the quality of the colluders, and more once reputation
+    feeds back; the cost falls on the best researchers outside the cartel.
+  - The incentive grows with α, the same parameter that gives SOFA its signal.
+  - Transparency decides which strategies are possible; no single safeguard covers every cartel
+    shape.
+- Close the Discussion by returning to the same question: what a pilot of SOFA would need to
+  measure (α, θ, the moral cost of strategic giving, who knows whom) before the answer can move from
+  a stylised model to a real community.
+
 **Is SOFA a good idea, in the terms of the model?**
 - Sincere SOFA is cheap and informative, but its gain over equal split depends on θ and σ_q.
 - α sets both the effect of sincere judgement and the gain from collusion; no value of α is high on
